@@ -1,12 +1,12 @@
 #include "client.hpp"
 
-void client_implementation(const char* address, USHORT port)
+void ClientImplementation(const char* address, USHORT port)
 {
 	SOCKET client_socket = INVALID_SOCKET;
 	WSADATA wsaData;
-	int result = 0;
+	s32 result = 0;
 
-	int wsa_startup = WSAStartup(MAKEWORD(2, 2), &wsaData);
+	s32 wsa_startup = WSAStartup(MAKEWORD(2, 2), &wsaData);
 	if (wsa_startup != 0) {
 		std::cout << "WSAStartup failed: " << wsa_startup;
 		return;
@@ -29,9 +29,9 @@ void client_implementation(const char* address, USHORT port)
 
 		XINPUT_STATE pad_state = {};
 
-		int pad_read_result = XInputGetState(0, &pad_state);
+		s32 pad_read_result = XInputGetState(0, &pad_state);
 		if (pad_read_result == ERROR_SUCCESS) {
-			int send_result = send(client_socket, reinterpret_cast<char*>(&pad_state), sizeof(XINPUT_STATE), 0);
+			s32 send_result = send(client_socket, reinterpret_cast<char*>(&pad_state), sizeof(XINPUT_STATE), 0);
 			if (send_result == SOCKET_ERROR) {
 				std::cout << "Could not send data to the host: " << WSAGetLastError();
 				close_host_socket(client_socket);

@@ -1,28 +1,25 @@
 #include "host.hpp"
-#include <condition_variable>
 
-std::condition_variable cond_var;
-std::mutex notification_mutex;
-std::thread stop_thread;
-
-static void stop_routine(std::condition_variable& cv) {
+static void StopRoutine(HostConcurrencyData& hcd)
+{
 	while (true) {
 		Sleep(50);
 		if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
-			std::scoped_lock notification_lock{ notification_mutex };
-			cv.notify_all();
+			std::scoped_lock notification_lock{ hcd.notification_mutex };
+			hcd.last_thread_to_notify = THREAD_TYPE_STOP;
+			hcd.cond_var.notify_all();
 			break;
 		}
 	}
 }
 
-SOCKET setup_host_socket(USHORT port)
+SOCKET SetupHostSocket(USHORT port)
 {
 	SOCKET host_socket = INVALID_SOCKET;
 	WSADATA wsaData;
-	int result = 0;
+	s32 result = 0;
 
-	int wsa_startup = WSAStartup(MAKEWORD(2, 2), &wsaData);
+	s32 wsa_startup = WSAStartup(MAKEWORD(2, 2), &wsaData);
 	if (wsa_startup != 0) {
 		std::cout << "WSAStartup failed: " << wsa_startup;
 		return INVALID_SOCKET;
@@ -53,8 +50,23 @@ SOCKET setup_host_socket(USHORT port)
 	return host_socket;
 }
 
-void host_implementation()
+void HostImplementation()
 {
+	u32 physical_pads = 0, virtual_pads = 0;
+	for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
+		XINPUT_STATE state;
+		if (XInputGetState(i, &state) == ERROR_SUCCESS)
+			physical_pads++;
+	}
+
+	std::cout << "Numbers of xbox pads to connect (" << XUSER_MAX_COUNT - physical_pads << " slots available)\n";
+	std::cin >> virtual_pads;
+
+	if (virtual_pads >= XUSER_MAX_COUNT - physical_pads) {
+		std::cout << "Not enough space\n";
+		return;
+	}
+
 	PVIGEM_CLIENT client = vigem_alloc();
 	const auto connection = vigem_connect(client);
 
@@ -64,55 +76,68 @@ void host_implementation()
 		return;
 	}
 
-	const auto controller = vigem_target_x360_alloc();
-	const auto controller_connection = vigem_target_add(client, controller);
+	HostConcurrencyData concurrency_data;
+	ConnectionInfo* client_connections = new ConnectionInfo[virtual_pads];
 
-	if (!VIGEM_SUCCESS(controller_connection))
-	{
-		std::cout << "ViGEm Bus connection failed with error code: " << std::hex << controller_connection;
-		return;
+	for (u32 i = 0; i < virtual_pads; i++) {
+		ConnectionInfo& connection = client_connections[i];
+		connection.pad_handle = vigem_target_x360_alloc();
+		const auto controller_connection = vigem_target_add(client, connection.pad_handle);
+
+		if (!VIGEM_SUCCESS(controller_connection))
+		{
+			std::cout << "ViGEm Bus connection failed with error code: " << std::hex << controller_connection;
+			return;
+		}
+
+
+		SOCKET host_socket = SetupHostSocket(20000);
+		connection.client_socket = accept(host_socket, NULL, NULL);
+		connection.client_thread = std::thread([&concurrency_data, &connection]() { HandleConnection(concurrency_data, connection); });
+		std::cout << "Connection found!!" << std::endl;
 	}
 
-	ConnectionInfo connection_info = {};
-	SOCKET host_socket = setup_host_socket(20000);
-	connection_info.client_socket = accept(host_socket, NULL, NULL);
-	connection_info.client_thread = std::thread([&]() { Sleep(2000); handle_connection(connection_info); });
-	std::cout << "Connection found!!" << std::endl;
+	std::thread stop_thread([&concurrency_data]() { StopRoutine(concurrency_data); });
+	std::unique_lock lk{ concurrency_data.notification_mutex };
 
-	stop_thread = std::thread([]() { stop_routine(cond_var); });
-
-	std::unique_lock lk{ notification_mutex };
 	while (true) {
-		cond_var.wait(lk);
+		concurrency_data.cond_var.wait(lk);
 
-		if (GetAsyncKeyState(VK_ESCAPE) & 0x8000)
+		//Means an ESC command was issued, so exit the loop
+		if (concurrency_data.last_thread_to_notify == THREAD_TYPE_STOP)
 			break;
 		
-		if (connection_info.updated) {
-			vigem_target_x360_update(client, controller, *reinterpret_cast<XUSB_REPORT*>(&connection_info.new_pad_input.Gamepad));
-			std::cout << connection_info.new_pad_input.Gamepad.wButtons << std::endl;
-			connection_info.updated = false;
+		for (u32 i = 0; i < virtual_pads; i++) {
+			ConnectionInfo& connection = client_connections[i];
+			if (connection.updated) {
+				vigem_target_x360_update(client, connection.pad_handle, *reinterpret_cast<XUSB_REPORT*>(&connection.pad_input.Gamepad));
+				std::cout << connection.pad_input.Gamepad.wButtons << std::endl;
+				connection.updated = false;
+			}
 		}
 	}
 	lk.unlock();
 
-	connection_info.thread_running = false;
-	closesocket(connection_info.client_socket);
-	connection_info.client_thread.join();
+	for (u32 i = 0; i < virtual_pads; i++) {
+		ConnectionInfo& connection = client_connections[i];
+		connection.thread_running = false;
+		closesocket(connection.client_socket);
+		connection.client_thread.join();
+
+		vigem_target_remove(client, connection.pad_handle);
+		vigem_target_free(connection.pad_handle);
+	}
 
 	stop_thread.join();
-
-	vigem_target_remove(client, controller);
-	vigem_target_free(controller);
 }
 
-void handle_connection(ConnectionInfo& connection_info)
+void HandleConnection(HostConcurrencyData& hcd, ConnectionInfo& connection_info)
 {
 	XINPUT_STATE prev_pad_state = {};
 	while (connection_info.thread_running) {
 		//TODO: move the waiting for new controller data on a separate thread
 		XINPUT_STATE pad_state = {};
-		int bytes_read = recv(connection_info.client_socket, reinterpret_cast<char*>(&pad_state), sizeof(XINPUT_STATE), 0);
+		s32 bytes_read = recv(connection_info.client_socket, reinterpret_cast<char*>(&pad_state), sizeof(XINPUT_STATE), 0);
 		if (WSAGetLastError() == WSAECONNRESET || bytes_read == 0) {
 			std::cout << "Error while receiving bytes from client socket: Client disconnected\n";
 			closesocket(connection_info.client_socket);
@@ -121,12 +146,12 @@ void handle_connection(ConnectionInfo& connection_info)
 		}
 
 		if(std::memcmp(&prev_pad_state.Gamepad, &pad_state.Gamepad, sizeof(XINPUT_STATE)) != 0) {
-			std::scoped_lock notification_lock{ notification_mutex };
-			connection_info.new_pad_input = pad_state;
-			connection_info.updated = true; 
-			cond_var.notify_all();
+			std::scoped_lock notification_lock{ hcd.notification_mutex };
+			connection_info.pad_input = pad_state;
+			connection_info.updated = true;
+			hcd.last_thread_to_notify = THREAD_TYPE_CLIENT;
+			hcd.cond_var.notify_all();
 			prev_pad_state = pad_state;
 		}
-
 	}
 }
