@@ -62,7 +62,7 @@ void HostImplementation()
 	std::cout << "Numbers of xbox pads to connect (" << XUSER_MAX_COUNT - physical_pads << " slots available)\n";
 	std::cin >> virtual_pads;
 
-	if (virtual_pads >= XUSER_MAX_COUNT - physical_pads) {
+	if (virtual_pads > XUSER_MAX_COUNT - physical_pads) {
 		std::cout << "Not enough space\n";
 		return;
 	}
