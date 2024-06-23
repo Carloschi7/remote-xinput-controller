@@ -10,8 +10,24 @@
 
 #include <iostream>
 #include <thread>
+#include <condition_variable>
 
 #include "types.hpp"
+
+enum MessageType
+{
+	MESSAGE_TYPE_ROOM_ADD = 0,
+	MESSAGE_TYPE_ROOM_JOIN,
+	MESSAGE_TYPE_ROOM_QUERY,
+
+	MESSAGE_TYPE_SEND_PAD_DATA,
+};
+
+enum ThreadType
+{
+	THREAD_TYPE_CLIENT,
+	THREAD_TYPE_STOP,
+};
 
 //TODO this needs to be moved elsewhere some time in the future
 static void close_host_socket(SOCKET socket)
@@ -20,8 +36,21 @@ static void close_host_socket(SOCKET socket)
 	WSACleanup();
 }
 
-enum ThreadType
+struct PadSignal
 {
-	THREAD_TYPE_CLIENT,
-	THREAD_TYPE_STOP,
+	u32 pad_number;
+	XINPUT_STATE pad_state;
 };
+
+struct Room
+{
+	//Edited by the server
+	SOCKET host_socket = 0;
+	XINPUT_GAMEPAD pads[4];
+	//Edited by the host
+	char name[16];
+	u16 max_pads;
+	u16 current_pads;
+};
+
+

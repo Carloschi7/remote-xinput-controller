@@ -14,14 +14,8 @@ struct HostConcurrencyData
 struct ConnectionInfo
 {
 	PVIGEM_TARGET pad_handle;
-	SOCKET client_socket = INVALID_SOCKET;
-	std::thread client_thread;
-	std::atomic_bool thread_running = true;
 	XINPUT_STATE pad_input;
-	bool updated = true;
 };
 
 
-SOCKET SetupHostSocket(USHORT port);
-void HostImplementation();
-void HandleConnection(HostConcurrencyData& hcd, ConnectionInfo& connection_info);
+void HostImplementation(const char* address, USHORT port);
