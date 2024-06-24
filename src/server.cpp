@@ -2,6 +2,8 @@
 #include <vector>
 #include <iostream>
 
+
+
 std::mutex message_queue_mutex;
 std::vector<std::thread> host_threads;
 std::vector<Room> rooms;
@@ -47,9 +49,17 @@ void ServerImplementation()
 {
 	SOCKET server_socket = SetupServerSocket(20000);
 
+	struct {
+		SOCKET socket_requested = 0;
+		Message connecting_message;
+		std::mutex notify_mutex;
+		std::condition_variable notify_cv;
+	} notify_data;
+
 	//TODO add a rooms mutex
-	auto handle_connection = [](SOCKET other_socket) {
+	auto handle_connection = [&](SOCKET other_socket) {
 		bool is_this_client_hosting = false;
+
 		while (true) {
 			Message msg;
 			u32 error_msg = recv(other_socket, reinterpret_cast<char*>(&msg), sizeof(Message), 0);
@@ -114,11 +124,19 @@ void ServerImplementation()
 
 					Message host_msg = MESSAGE_INFO_CLIENT_JOINING_ROOM;
 					send(rooms[room_to_join].host_socket, reinterpret_cast<char*>(&host_msg), sizeof(Message), 0);
-					//Understand whether the room host allocates the pad without issues
-					//recv(rooms[room_to_join].host_socket, reinterpret_cast<char*>(&host_msg), sizeof(Message), 0);
+
+					{
+						//Ask for the host thread if there are any issues during the connecting phase
+						std::unique_lock lk{ notify_data.notify_mutex };
+						if (notify_data.socket_requested == 0) {
+							notify_data.socket_requested = rooms[room_to_join].host_socket;
+							notify_data.notify_cv.wait(lk);
+							host_msg = notify_data.connecting_message;
+							notify_data.socket_requested = 0;
+						}
+					}
 
 					Message response;
-					host_msg = MESSAGE_ERROR_NONE;
 					if (host_msg == MESSAGE_ERROR_NONE) {
 
 						u32 client_slot = 0;
@@ -177,7 +195,16 @@ void ServerImplementation()
 
 
 			}break;
-
+			case MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD:
+			case MESSAGE_INFO_PAD_ALLOCATED: {
+				if (is_this_client_hosting) {
+					std::unique_lock lk{ notify_data.notify_mutex };
+					if (notify_data.socket_requested == other_socket) {
+						notify_data.connecting_message = msg == MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD ? msg : MESSAGE_ERROR_NONE;
+						notify_data.notify_cv.notify_one();
+					}
+				}
+			}break;
 			}
 		}
 	};

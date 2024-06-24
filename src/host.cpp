@@ -110,11 +110,11 @@ void HostImplementation(SOCKET host_socket)
 			std::cout << "ViGEm Bus connection failed with error code: " << std::hex << controller_connection;
 
 			msg = MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD;
-			//send(host_socket, reinterpret_cast<char*>(&msg), sizeof(Message), 0);
+			send(host_socket, reinterpret_cast<char*>(&msg), sizeof(Message), 0);
 		}
 		else {
-			msg = MESSAGE_ERROR_NONE;
-			//send(host_socket, reinterpret_cast<char*>(&msg), sizeof(Message), 0);
+			msg = MESSAGE_INFO_PAD_ALLOCATED;
+			send(host_socket, reinterpret_cast<char*>(&msg), sizeof(Message), 0);
 		}
 
 		//connection.client_thread = std::thread([&concurrency_data, &connection]() { HandleConnection(concurrency_data, connection); });
