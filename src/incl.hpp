@@ -58,9 +58,14 @@ struct Room
 		bool slot_taken;
 	} connected_sockets[4] = {};
 	//Edited by the host
-	char name[16];
-	u16 max_pads;
-	u16 current_pads;
+	struct Info {
+		char name[16];
+		u16 max_pads;
+		u16 current_pads;
+	} info;
+	std::mutex* mtx;
+	std::condition_variable* notify_cv;
+	Message connecting_message;
 };
 
 

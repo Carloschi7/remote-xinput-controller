@@ -49,13 +49,6 @@ void ServerImplementation()
 {
 	SOCKET server_socket = SetupServerSocket(20000);
 
-	struct {
-		SOCKET socket_requested = 0;
-		Message connecting_message;
-		std::mutex notify_mutex;
-		std::condition_variable notify_cv;
-	} notify_data;
-
 	//TODO add a rooms mutex
 	auto handle_connection = [&](SOCKET other_socket) {
 		bool is_this_client_hosting = false;
@@ -77,6 +70,8 @@ void ServerImplementation()
 
 					//Should always be true
 					if (socket_room != -1) {
+						delete rooms[socket_room].mtx;
+						delete rooms[socket_room].notify_cv;
 						rooms.erase(rooms.begin() + socket_room);
 					}
 				}
@@ -86,7 +81,7 @@ void ServerImplementation()
 							auto& sock_info = rooms[i].connected_sockets[j];
 							if (other_socket == sock_info.sock) {
 								sock_info.slot_taken = false;
-								rooms[i].current_pads--;
+								rooms[i].info.current_pads--;
 								break;
 							}
 						}
@@ -101,13 +96,16 @@ void ServerImplementation()
 			case MESSAGE_REQUEST_ROOM_CREATE: {
 				is_this_client_hosting = true;
 
-				Room new_room;
-				error_msg = recv(other_socket, reinterpret_cast<char*>(&new_room), sizeof(Room), 0);
+				Room::Info new_room_info;
+				error_msg = recv(other_socket, reinterpret_cast<char*>(&new_room_info), sizeof(Room::Info), 0);
 				if (error_msg == SOCKET_ERROR) {
 
 				}
-				new_room.host_socket = other_socket;
-				rooms.push_back(new_room);
+				Room& room = rooms.emplace_back();
+				room.info = new_room_info;
+				room.host_socket = other_socket;
+				room.mtx = new std::mutex;
+				room.notify_cv = new std::condition_variable;
 
 			} break;
 
@@ -117,23 +115,26 @@ void ServerImplementation()
 				u32 room_to_join;
 				error_msg = recv(other_socket, reinterpret_cast<char*>(&room_to_join), sizeof(u32), 0);
 				if (error_msg == SOCKET_ERROR) {
-
+					break;
 				}
-				if (room_to_join < rooms.size() && rooms[room_to_join].current_pads < rooms[room_to_join].max_pads) {
-					rooms[room_to_join].current_pads++;
+
+				if (room_to_join >= rooms.size()) {
+					//TODO need a new message
+					break;
+				}
+
+				Room& room = rooms[room_to_join];
+				if (room.info.current_pads < room.info.max_pads) {
+					room.info.current_pads++;
 
 					Message host_msg = MESSAGE_INFO_CLIENT_JOINING_ROOM;
 					send(rooms[room_to_join].host_socket, reinterpret_cast<char*>(&host_msg), sizeof(Message), 0);
 
 					{
 						//Ask for the host thread if there are any issues during the connecting phase
-						std::unique_lock lk{ notify_data.notify_mutex };
-						if (notify_data.socket_requested == 0) {
-							notify_data.socket_requested = rooms[room_to_join].host_socket;
-							notify_data.notify_cv.wait(lk);
-							host_msg = notify_data.connecting_message;
-							notify_data.socket_requested = 0;
-						}
+						std::unique_lock lk{ *room.mtx };
+						room.notify_cv->wait(lk);
+						host_msg = room.connecting_message;
 					}
 
 					Message response;
@@ -166,7 +167,7 @@ void ServerImplementation()
 
 				}
 				for (u32 i = 0; i < rooms.size(); i++) {
-					send(other_socket, reinterpret_cast<char*>(&rooms[i]), sizeof(Room), 0);
+					send(other_socket, reinterpret_cast<char*>(&rooms[i].info), sizeof(Room::Info), 0);
 				}
 			} break;
 
@@ -182,6 +183,7 @@ void ServerImplementation()
 						if (rooms[chosen_room].connected_sockets[i].sock == other_socket) {
 							found_match = true;
 							client_slot = i;
+							break;
 						}
 					}
 
@@ -198,11 +200,17 @@ void ServerImplementation()
 			case MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD:
 			case MESSAGE_INFO_PAD_ALLOCATED: {
 				if (is_this_client_hosting) {
-					std::unique_lock lk{ notify_data.notify_mutex };
-					if (notify_data.socket_requested == other_socket) {
-						notify_data.connecting_message = msg == MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD ? msg : MESSAGE_ERROR_NONE;
-						notify_data.notify_cv.notify_one();
+					u32 room_index = 0;
+					for (u32 i = 0; i < rooms.size(); i++) {
+						if (rooms[i].host_socket == other_socket) {
+							room_index = i;
+							break;
+						}
 					}
+
+					std::unique_lock lk{ *rooms[room_index].mtx };
+					rooms[room_index].connecting_message = msg == MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD ? msg : MESSAGE_ERROR_NONE;
+					rooms[room_index].notify_cv->notify_one();
 				}
 			}break;
 			}

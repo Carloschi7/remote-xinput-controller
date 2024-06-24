@@ -1,4 +1,4 @@
-//#define SERVER_IMPL
+#define SERVER_IMPL
 
 #ifdef SERVER_IMPL
 

@@ -10,16 +10,16 @@ void QueryRooms(SOCKET client_socket)
 
 	std::cout << "Available rooms          Room name          Users Connected          Max users\n";
 	for (u32 i = 0; i < rooms_count; i++) {
-		Room current_room;
-		recv(client_socket, reinterpret_cast<char*>(&current_room), sizeof(Room), 0);
+		Room::Info room_info;
+		recv(client_socket, reinterpret_cast<char*>(&room_info), sizeof(Room::Info), 0);
 
 		std::string name_padding = "                   ";
-		for (u32 i = 0; i < sizeof(current_room.name) && current_room.name[i] != 0; i++) {
+		for (u32 i = 0; i < sizeof(room_info.name) && room_info.name[i] != 0; i++) {
 			name_padding.pop_back();
 		}
 
-		std::cout << "Room: #" << i << ":                " << current_room.name << name_padding.c_str() <<
-			current_room.current_pads << "                        " << current_room.max_pads << "\n";
+		std::cout << "Room: #" << i << ":                " << room_info.name << name_padding.c_str() <<
+			room_info.current_pads << "                        " << room_info.max_pads << "\n";
 	}
 }
 

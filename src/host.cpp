@@ -60,19 +60,19 @@ void HostImplementation(SOCKET host_socket)
 		return;
 	}
 
-	Room room;
-	room.current_pads = 0;
-	room.max_pads = virtual_pads;
+	Room::Info room_info;
+	room_info.current_pads = 0;
+	room_info.max_pads = virtual_pads;
 	{
 		std::string room_name;
 		std::cout << "Insert room name:\n";
 		std::cin >> room_name;
-		if (room_name.size() >= sizeof(room.name)) {
-			std::memcpy(room.name, "unknown", sizeof("unknown"));
+		if (room_name.size() >= sizeof(room_info.name)) {
+			std::memcpy(room_info.name, "unknown", sizeof("unknown"));
 		}
 		else {
-			std::memcpy(room.name, room_name.c_str(), room_name.size());
-			room.name[room_name.size()] = 0;
+			std::memcpy(room_info.name, room_name.c_str(), room_name.size());
+			room_info.name[room_name.size()] = 0;
 		}
 	}
 
@@ -90,7 +90,7 @@ void HostImplementation(SOCKET host_socket)
 
 	Message msg = MESSAGE_REQUEST_ROOM_CREATE;
 	send(host_socket, reinterpret_cast<char*>(&msg), sizeof(Message), 0);
-	send(host_socket, reinterpret_cast<char*>(&room), sizeof(Room), 0);
+	send(host_socket, reinterpret_cast<char*>(&room_info), sizeof(Room::Info), 0);
 
 	for (u32 i = 0; i < virtual_pads; i++) {
 
