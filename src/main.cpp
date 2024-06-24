@@ -14,18 +14,30 @@ int main()
 #include "host.hpp"
 #include "client.hpp"
 
+
+
 int main()
 {
-	std::string ans;
-	std::cout << "Start server? (Y/N)\n";
-	std::cin >> ans;
-	std::string ip;
+	std::string create_room_or_not, ip;
+
 	std::cout << "insert the server IP:\n";
 	std::cin >> ip;
-	if (ans == "Y")
-		HostImplementation(ip.c_str(), 20000);
+
+	SOCKET local_socket = ConnectToServer(ip.c_str(), 20000);
+	if (local_socket == INVALID_SOCKET) {
+		std::cout << "Could not connect to that server\n";
+		return -1;
+	}
+
+	QueryRooms(local_socket);
+
+	std::cout << "Create a room? (Y/N)\n";
+	std::cin >> create_room_or_not;
+
+	if (create_room_or_not == "Y")
+		HostImplementation(local_socket);
 	else 
-		ClientImplementation(ip.c_str(), 20000);
+		ClientImplementation(local_socket);
 	
 }
 #endif

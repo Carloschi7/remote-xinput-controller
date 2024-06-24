@@ -2,12 +2,6 @@
 #include <vector>
 #include <iostream>
 
-struct HostMessage
-{
-	SOCKET host_socket;
-	MessageType type;
-};
-
 std::mutex message_queue_mutex;
 std::vector<std::thread> host_threads;
 std::vector<Room> rooms;
@@ -55,12 +49,48 @@ void ServerImplementation()
 
 	//TODO add a rooms mutex
 	auto handle_connection = [](SOCKET other_socket) {
+		bool is_this_client_hosting = false;
 		while (true) {
-			MessageType msg;
-			u32 error_msg = recv(other_socket, reinterpret_cast<char*>(&msg), sizeof(MessageType), 0);
+			Message msg;
+			u32 error_msg = recv(other_socket, reinterpret_cast<char*>(&msg), sizeof(Message), 0);
+
+			if (error_msg == SOCKET_ERROR) {
+
+				if (is_this_client_hosting) {
+					s32 socket_room = -1;
+					for (u32 i = 0; i < rooms.size(); i++) {
+						if (other_socket == rooms[i].host_socket) {
+							socket_room = static_cast<s32>(i);
+							break;
+						}
+					}
+
+					//Should always be true
+					if (socket_room != -1) {
+						rooms.erase(rooms.begin() + socket_room);
+					}
+				}
+				else {
+					for (u32 i = 0; i < rooms.size(); i++) {
+						for (u32 j = 0; j < 4; j++) {
+							auto& sock_info = rooms[i].connected_sockets[j];
+							if (other_socket == sock_info.sock) {
+								sock_info.slot_taken = false;
+								rooms[i].current_pads--;
+								break;
+							}
+						}
+						
+					}
+				}
+
+				break;
+			}
 
 			switch (msg) {
-			case MESSAGE_TYPE_ROOM_ADD: {
+			case MESSAGE_REQUEST_ROOM_CREATE: {
+				is_this_client_hosting = true;
+
 				Room new_room;
 				error_msg = recv(other_socket, reinterpret_cast<char*>(&new_room), sizeof(Room), 0);
 				if (error_msg == SOCKET_ERROR) {
@@ -71,20 +101,36 @@ void ServerImplementation()
 
 			} break;
 
-			case MESSAGE_TYPE_ROOM_JOIN: {
+			case MESSAGE_REQUEST_ROOM_JOIN: {
+				is_this_client_hosting = false;
+
 				u32 room_to_join;
 				error_msg = recv(other_socket, reinterpret_cast<char*>(&room_to_join), sizeof(u32), 0);
 				if (error_msg == SOCKET_ERROR) {
 
 				}
 				if (room_to_join < rooms.size() && rooms[room_to_join].current_pads < rooms[room_to_join].max_pads) {
-					u32 client_slot = rooms[room_to_join].current_pads++;
+					rooms[room_to_join].current_pads++;
+
+					u32 client_slot = 0;
+					while (client_slot < XUSER_MAX_COUNT && rooms[room_to_join].connected_sockets[client_slot].slot_taken)
+						client_slot++;
+
+					rooms[room_to_join].connected_sockets[client_slot].sock = other_socket;
+					rooms[room_to_join].connected_sockets[client_slot].slot_taken = true;
+
 					send(rooms[room_to_join].host_socket, "AAAA", sizeof("AAAA"), 0);
-					send(other_socket, reinterpret_cast<char*>(&client_slot), sizeof(u32), 0);
+					
+					Message response = MESSAGE_INFO_ROOM_JOINED;
+					send(other_socket, reinterpret_cast<char*>(&response), sizeof(Message), 0);
+				}
+				else {
+					Message response = MESSAGE_ERROR_ROOM_AT_FULL_CAPACITY;
+					send(other_socket, reinterpret_cast<char*>(&response), sizeof(Message), 0);
 				}
 			} break;
 
-			case MESSAGE_TYPE_ROOM_QUERY: {
+			case MESSAGE_REQUEST_ROOM_QUERY: {
 				u32 room_count = rooms.size();
 				error_msg = send(other_socket, reinterpret_cast<char*>(&room_count), sizeof(u32), 0);
 				if (error_msg == SOCKET_ERROR) {
@@ -95,21 +141,30 @@ void ServerImplementation()
 				}
 			} break;
 
-			case MESSAGE_TYPE_SEND_PAD_DATA: {
+			case MESSAGE_REQUEST_SEND_PAD_DATA: {
 				u32 chosen_room, client_slot;
-				XINPUT_STATE pad_state;
+				XINPUT_GAMEPAD pad_state;
 				recv(other_socket, reinterpret_cast<char*>(&chosen_room), sizeof(u32), 0);
-				recv(other_socket, reinterpret_cast<char*>(&client_slot), sizeof(u32), 0);
-				recv(other_socket, reinterpret_cast<char*>(&pad_state.Gamepad), sizeof(XINPUT_GAMEPAD), 0);
+				recv(other_socket, reinterpret_cast<char*>(&pad_state), sizeof(XINPUT_GAMEPAD), 0);
 
-				if (chosen_room >= rooms.size()) {
-					//TODO
+				if (chosen_room < rooms.size()) {
+					bool found_match = false;
+					for (u32 i = 0; i < 4; i++) {
+						if (rooms[chosen_room].connected_sockets[i].sock == other_socket) {
+							found_match = true;
+							client_slot = i;
+						}
+					}
+
+					if (found_match) {
+						PadSignal pad_signal;
+						pad_signal.pad_number = client_slot;
+						pad_signal.pad_state = pad_state;
+						send(rooms[chosen_room].host_socket, reinterpret_cast<char*>(&pad_signal), sizeof(PadSignal), 0);
+					}
 				}
 
-				PadSignal pad_signal;
-				pad_signal.pad_number = client_slot;
-				pad_signal.pad_state = pad_state;
-				send(rooms[chosen_room].host_socket, reinterpret_cast<char*>(&pad_signal), sizeof(PadSignal), 0);
+
 			}break;
 
 			}

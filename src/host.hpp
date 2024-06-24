@@ -17,5 +17,5 @@ struct ConnectionInfo
 	XINPUT_STATE pad_input;
 };
 
-
-void HostImplementation(const char* address, USHORT port);
+SOCKET ConnectToServer(const char* address, USHORT port);
+void HostImplementation(SOCKET host_socket);

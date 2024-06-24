@@ -1,4 +1,5 @@
 #pragma once
 #include "incl.hpp"
 
-void ClientImplementation(const char* address, USHORT port);
+void QueryRooms(SOCKET client_socket);
+void ClientImplementation(SOCKET client_socket);

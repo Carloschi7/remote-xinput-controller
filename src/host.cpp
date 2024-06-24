@@ -1,6 +1,6 @@
 #include "host.hpp"
 
-static SOCKET SetupSocket(const char* address, USHORT port)
+SOCKET ConnectToServer(const char* address, USHORT port)
 {
 	SOCKET connecting_socket = INVALID_SOCKET;
 	WSADATA wsaData;
@@ -43,7 +43,7 @@ static void StopRoutine(HostConcurrencyData& hcd)
 
 
 
-void HostImplementation(const char* address, USHORT port)
+void HostImplementation(SOCKET host_socket)
 {
 	u32 physical_pads = 0, virtual_pads = 0;
 	for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
@@ -63,7 +63,6 @@ void HostImplementation(const char* address, USHORT port)
 	Room room;
 	room.current_pads = 0;
 	room.max_pads = virtual_pads;
-	std::memset(&room.pads, 0, sizeof(room.pads));
 	{
 		std::string room_name;
 		std::cout << "Insert room name:\n";
@@ -88,13 +87,9 @@ void HostImplementation(const char* address, USHORT port)
 
 	HostConcurrencyData concurrency_data;
 	ConnectionInfo* client_connections = new ConnectionInfo[virtual_pads];
-	SOCKET host_socket = SetupSocket(address, port);
 
-	MessageType msg = MESSAGE_TYPE_ROOM_ADD;
-	send(host_socket, reinterpret_cast<char*>(&msg), sizeof(MessageType), 0);
-
-
-
+	Message msg = MESSAGE_REQUEST_ROOM_CREATE;
+	send(host_socket, reinterpret_cast<char*>(&msg), sizeof(Message), 0);
 	send(host_socket, reinterpret_cast<char*>(&room), sizeof(Room), 0);
 
 	for (u32 i = 0; i < virtual_pads; i++) {
@@ -109,6 +104,7 @@ void HostImplementation(const char* address, USHORT port)
 
 		if (!VIGEM_SUCCESS(controller_connection))
 		{
+			//TODO tell the server if vigem works fine
 			std::cout << "ViGEm Bus connection failed with error code: " << std::hex << controller_connection;
 			return;
 		}
@@ -125,7 +121,8 @@ void HostImplementation(const char* address, USHORT port)
 		if (concurrency_data.last_thread_to_notify == THREAD_TYPE_STOP)
 			break;
 		
-		vigem_target_x360_update(client, client_connections[signal.pad_number].pad_handle, *reinterpret_cast<XUSB_REPORT*>(&signal.pad_state.Gamepad));
-		std::cout << signal.pad_state.Gamepad.wButtons << std::endl;
+		vigem_target_x360_update(client, client_connections[signal.pad_number].pad_handle, *reinterpret_cast<XUSB_REPORT*>(&signal.pad_state));
+		std::cout << "Signal from pad " << signal.pad_number << "\n";
+		std::cout << signal.pad_state.wButtons << std::endl;
 	}
 }

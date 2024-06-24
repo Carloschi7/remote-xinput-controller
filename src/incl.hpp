@@ -14,13 +14,16 @@
 
 #include "types.hpp"
 
-enum MessageType
+enum Message
 {
-	MESSAGE_TYPE_ROOM_ADD = 0,
-	MESSAGE_TYPE_ROOM_JOIN,
-	MESSAGE_TYPE_ROOM_QUERY,
+	MESSAGE_REQUEST_ROOM_CREATE = 0,
+	MESSAGE_REQUEST_ROOM_JOIN,
+	MESSAGE_REQUEST_ROOM_QUERY,
+	MESSAGE_REQUEST_SEND_PAD_DATA,
 
-	MESSAGE_TYPE_SEND_PAD_DATA,
+	MESSAGE_INFO_ROOM_JOINED,
+
+	MESSAGE_ERROR_ROOM_AT_FULL_CAPACITY,
 };
 
 enum ThreadType
@@ -39,14 +42,17 @@ static void close_host_socket(SOCKET socket)
 struct PadSignal
 {
 	u32 pad_number;
-	XINPUT_STATE pad_state;
+	XINPUT_GAMEPAD pad_state;
 };
 
 struct Room
 {
 	//Edited by the server
 	SOCKET host_socket = 0;
-	XINPUT_GAMEPAD pads[4];
+	struct {
+		SOCKET sock;
+		bool slot_taken;
+	} connected_sockets[4] = {};
 	//Edited by the host
 	char name[16];
 	u16 max_pads;
