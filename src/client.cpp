@@ -42,8 +42,11 @@ void ClientImplementation(SOCKET client_socket)
 		if (connection_status == MESSAGE_ERROR_ROOM_AT_FULL_CAPACITY) {
 			std::cout << "Could not connect, the room is currently at full capacity\n";
 		}
+		else if (connection_status == MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD) {
+			std::cout << "The host had issues creating a virtual pad, please try later\n";
+		}
 
-	} while (connection_status == MESSAGE_ERROR_ROOM_AT_FULL_CAPACITY);
+	} while (connection_status != MESSAGE_ERROR_NONE);
 
 	std::cout << "Connection was successful!\n";
 

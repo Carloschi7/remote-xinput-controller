@@ -112,16 +112,27 @@ void ServerImplementation()
 				if (room_to_join < rooms.size() && rooms[room_to_join].current_pads < rooms[room_to_join].max_pads) {
 					rooms[room_to_join].current_pads++;
 
-					u32 client_slot = 0;
-					while (client_slot < XUSER_MAX_COUNT && rooms[room_to_join].connected_sockets[client_slot].slot_taken)
-						client_slot++;
+					Message host_msg = MESSAGE_INFO_CLIENT_JOINING_ROOM;
+					send(rooms[room_to_join].host_socket, reinterpret_cast<char*>(&host_msg), sizeof(Message), 0);
+					//Understand whether the room host allocates the pad without issues
+					//recv(rooms[room_to_join].host_socket, reinterpret_cast<char*>(&host_msg), sizeof(Message), 0);
 
-					rooms[room_to_join].connected_sockets[client_slot].sock = other_socket;
-					rooms[room_to_join].connected_sockets[client_slot].slot_taken = true;
+					Message response;
+					host_msg = MESSAGE_ERROR_NONE;
+					if (host_msg == MESSAGE_ERROR_NONE) {
 
-					send(rooms[room_to_join].host_socket, "AAAA", sizeof("AAAA"), 0);
-					
-					Message response = MESSAGE_INFO_ROOM_JOINED;
+						u32 client_slot = 0;
+						while (client_slot < XUSER_MAX_COUNT && rooms[room_to_join].connected_sockets[client_slot].slot_taken)
+							client_slot++;
+
+						rooms[room_to_join].connected_sockets[client_slot].sock = other_socket;
+						rooms[room_to_join].connected_sockets[client_slot].slot_taken = true;
+
+						response = MESSAGE_ERROR_NONE;
+					}
+					else {
+						response = MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD;
+					}
 					send(other_socket, reinterpret_cast<char*>(&response), sizeof(Message), 0);
 				}
 				else {

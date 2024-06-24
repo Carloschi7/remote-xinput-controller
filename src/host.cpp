@@ -95,8 +95,10 @@ void HostImplementation(SOCKET host_socket)
 	for (u32 i = 0; i < virtual_pads; i++) {
 
 		//TODO insert a valid identifier to receive the user
-		char new_user_name[16];
-		u32 error_code = recv(host_socket, new_user_name, sizeof(new_user_name), 0);
+		u32 error_code = recv(host_socket, reinterpret_cast<char*>(&msg), sizeof(Message), 0);
+		if (msg != MESSAGE_INFO_CLIENT_JOINING_ROOM) {
+			//TODO prob should create an assert
+		}
 
 		ConnectionInfo& connection = client_connections[i];
 		connection.pad_handle = vigem_target_x360_alloc();
@@ -106,7 +108,13 @@ void HostImplementation(SOCKET host_socket)
 		{
 			//TODO tell the server if vigem works fine
 			std::cout << "ViGEm Bus connection failed with error code: " << std::hex << controller_connection;
-			return;
+
+			msg = MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD;
+			//send(host_socket, reinterpret_cast<char*>(&msg), sizeof(Message), 0);
+		}
+		else {
+			msg = MESSAGE_ERROR_NONE;
+			//send(host_socket, reinterpret_cast<char*>(&msg), sizeof(Message), 0);
 		}
 
 		//connection.client_thread = std::thread([&concurrency_data, &connection]() { HandleConnection(concurrency_data, connection); });
