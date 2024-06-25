@@ -88,14 +88,13 @@ void HostImplementation(SOCKET host_socket)
 	HostConcurrencyData concurrency_data;
 	ConnectionInfo* client_connections = new ConnectionInfo[virtual_pads];
 
-	Message msg = MESSAGE_REQUEST_ROOM_CREATE;
-	Send(host_socket, msg);
+	SendMsg(host_socket, MESSAGE_REQUEST_ROOM_CREATE);
 	Send(host_socket, room_info);
 
 	for (u32 i = 0; i < virtual_pads; i++) {
 
 		//TODO insert a valid identifier to receive the user
-		u32 error_code = Receive(host_socket, &msg);
+		Message msg = ReceiveMsg(host_socket);
 		if (msg != MESSAGE_INFO_CLIENT_JOINING_ROOM) {
 			//TODO prob should create an assert
 		}
@@ -106,12 +105,11 @@ void HostImplementation(SOCKET host_socket)
 
 		if (!VIGEM_SUCCESS(controller_connection)) {
 			std::cout << "ViGEm Bus connection failed with error code: " << std::hex << controller_connection;
-			msg = MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD;
+			SendMsg(host_socket, MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD);
 		}
 		else {
-			msg = MESSAGE_INFO_PAD_ALLOCATED;
+			SendMsg(host_socket, MESSAGE_INFO_PAD_ALLOCATED);
 		}
-		Send(host_socket, msg);
 
 		//connection.client_thread = std::thread([&concurrency_data, &connection]() { HandleConnection(concurrency_data, connection); });
 		std::cout << "Connection found!!" << std::endl;

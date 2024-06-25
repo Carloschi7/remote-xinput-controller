@@ -17,7 +17,9 @@
 
 enum Message
 {
-	MESSAGE_REQUEST_ROOM_CREATE = 0,
+	MESSAGE_EMPTY = 0,
+
+	MESSAGE_REQUEST_ROOM_CREATE,
 	MESSAGE_REQUEST_ROOM_JOIN,
 	MESSAGE_REQUEST_ROOM_QUERY,
 	MESSAGE_REQUEST_SEND_PAD_DATA,
@@ -28,7 +30,8 @@ enum Message
 
 	MESSAGE_ERROR_NONE,
 	MESSAGE_ERROR_ROOM_AT_FULL_CAPACITY,
-	MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD
+	MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD,
+	MESSAGE_ERROR_ROOM_NO_LONGER_EXISTS
 };
 
 enum ThreadType
@@ -57,11 +60,32 @@ struct Room
 		u16 max_pads;
 		u16 current_pads;
 	} info;
+
 	std::mutex* mtx;
 	std::condition_variable* notify_cv;
 	Message connecting_message;
 };
 
+
+static inline void SendMsg(SOCKET sock, Message msg)
+{
+	s32 error_msg = send(sock, reinterpret_cast<char*>(&msg), sizeof(Message), 0);
+	if (error_msg == SOCKET_ERROR) {
+		std::cout << "Error with Send func: " << WSAGetLastError() << "\n";
+	}
+}
+
+static inline Message ReceiveMsg(SOCKET sock) 
+{
+	Message msg;
+	s32 error_msg = recv(sock, reinterpret_cast<char*>(&msg), sizeof(Message), 0);
+	if (error_msg == SOCKET_ERROR) {
+		std::cout << "Error with Receive func: " << WSAGetLastError() << "\n";
+		return MESSAGE_EMPTY;
+	}
+
+	return msg;
+}
 
 template<typename T>
 static inline bool Send(SOCKET sock, T& data)

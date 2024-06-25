@@ -2,10 +2,8 @@
 #include <vector>
 #include <iostream>
 
-
-
-std::mutex message_queue_mutex;
 std::vector<std::thread> host_threads;
+std::mutex rooms_mutex;
 std::vector<Room> rooms;
 
 SOCKET SetupServerSocket(USHORT port)
@@ -54,8 +52,11 @@ void ServerImplementation()
 		bool is_this_client_hosting = false;
 
 		while (true) {
+			//We actually care about the possibility of errors here
 			Message msg;
 			bool correct_recv = Receive(other_socket, &msg);
+
+			std::unique_lock rooms_lock{ rooms_mutex };
 
 			if (!correct_recv) {
 
@@ -70,6 +71,7 @@ void ServerImplementation()
 
 					//Should always be true
 					if (socket_room != -1) {
+
 						delete rooms[socket_room].mtx;
 						delete rooms[socket_room].notify_cv;
 						rooms.erase(rooms.begin() + socket_room);
@@ -121,13 +123,16 @@ void ServerImplementation()
 				if (room.info.current_pads < room.info.max_pads) {
 					room.info.current_pads++;
 
-					Message host_msg = MESSAGE_INFO_CLIENT_JOINING_ROOM;
-					Send(rooms[room_to_join].host_socket, host_msg);
+					SendMsg(rooms[room_to_join].host_socket, MESSAGE_INFO_CLIENT_JOINING_ROOM);
 
+					Message host_msg;
 					{
 						//Ask for the host thread if there are any issues during the connecting phase
 						std::unique_lock lk{ *room.mtx };
+						//Always unlock the room lock to allow the host thread to send the connecting message
+						rooms_lock.unlock();
 						room.notify_cv->wait(lk);
+						rooms_lock.lock();
 						host_msg = room.connecting_message;
 					}
 
@@ -141,16 +146,14 @@ void ServerImplementation()
 						rooms[room_to_join].connected_sockets[client_slot].sock = other_socket;
 						rooms[room_to_join].connected_sockets[client_slot].slot_taken = true;
 
-						response = MESSAGE_ERROR_NONE;
+						SendMsg(other_socket, MESSAGE_ERROR_NONE);
 					}
 					else {
-						response = MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD;
+						SendMsg(other_socket, MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD);
 					}
-					Send(other_socket, response);
 				}
 				else {
-					Message response = MESSAGE_ERROR_ROOM_AT_FULL_CAPACITY;
-					Send(other_socket, response);
+					SendMsg(other_socket, MESSAGE_ERROR_ROOM_AT_FULL_CAPACITY);
 				}
 			} break;
 
@@ -168,8 +171,8 @@ void ServerImplementation()
 				Receive(other_socket, &chosen_room);
 				Receive(other_socket, &pad_state);
 
+				bool found_match = false;
 				if (chosen_room < rooms.size()) {
-					bool found_match = false;
 					for (u32 i = 0; i < 4; i++) {
 						if (rooms[chosen_room].connected_sockets[i].sock == other_socket) {
 							found_match = true;
@@ -178,12 +181,20 @@ void ServerImplementation()
 						}
 					}
 
+					//The socket is actually connected to the room
 					if (found_match) {
 						PadSignal pad_signal;
 						pad_signal.pad_number = client_slot;
 						pad_signal.pad_state = pad_state;
+						SendMsg(other_socket, MESSAGE_ERROR_NONE);
 						Send(rooms[chosen_room].host_socket, pad_signal);
 					}
+				}
+
+				if (!found_match) {
+					//Probably the client is looking for an old room that
+					//was deleted and does not exist anymore, notify the client
+					SendMsg(other_socket, MESSAGE_ERROR_ROOM_NO_LONGER_EXISTS);
 				}
 
 
