@@ -55,9 +55,9 @@ void ServerImplementation()
 
 		while (true) {
 			Message msg;
-			u32 error_msg = recv(other_socket, reinterpret_cast<char*>(&msg), sizeof(Message), 0);
+			bool correct_recv = Receive(other_socket, &msg);
 
-			if (error_msg == SOCKET_ERROR) {
+			if (!correct_recv) {
 
 				if (is_this_client_hosting) {
 					s32 socket_room = -1;
@@ -97,10 +97,7 @@ void ServerImplementation()
 				is_this_client_hosting = true;
 
 				Room::Info new_room_info;
-				error_msg = recv(other_socket, reinterpret_cast<char*>(&new_room_info), sizeof(Room::Info), 0);
-				if (error_msg == SOCKET_ERROR) {
-
-				}
+				Receive(other_socket, &new_room_info);
 				Room& room = rooms.emplace_back();
 				room.info = new_room_info;
 				room.host_socket = other_socket;
@@ -113,10 +110,7 @@ void ServerImplementation()
 				is_this_client_hosting = false;
 
 				u32 room_to_join;
-				error_msg = recv(other_socket, reinterpret_cast<char*>(&room_to_join), sizeof(u32), 0);
-				if (error_msg == SOCKET_ERROR) {
-					break;
-				}
+				Receive(other_socket, &room_to_join);
 
 				if (room_to_join >= rooms.size()) {
 					//TODO need a new message
@@ -128,7 +122,7 @@ void ServerImplementation()
 					room.info.current_pads++;
 
 					Message host_msg = MESSAGE_INFO_CLIENT_JOINING_ROOM;
-					send(rooms[room_to_join].host_socket, reinterpret_cast<char*>(&host_msg), sizeof(Message), 0);
+					Send(rooms[room_to_join].host_socket, host_msg);
 
 					{
 						//Ask for the host thread if there are any issues during the connecting phase
@@ -152,30 +146,27 @@ void ServerImplementation()
 					else {
 						response = MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD;
 					}
-					send(other_socket, reinterpret_cast<char*>(&response), sizeof(Message), 0);
+					Send(other_socket, response);
 				}
 				else {
 					Message response = MESSAGE_ERROR_ROOM_AT_FULL_CAPACITY;
-					send(other_socket, reinterpret_cast<char*>(&response), sizeof(Message), 0);
+					Send(other_socket, response);
 				}
 			} break;
 
 			case MESSAGE_REQUEST_ROOM_QUERY: {
 				u32 room_count = rooms.size();
-				error_msg = send(other_socket, reinterpret_cast<char*>(&room_count), sizeof(u32), 0);
-				if (error_msg == SOCKET_ERROR) {
-
-				}
+				Send(other_socket, room_count);
 				for (u32 i = 0; i < rooms.size(); i++) {
-					send(other_socket, reinterpret_cast<char*>(&rooms[i].info), sizeof(Room::Info), 0);
+					Send(other_socket, rooms[i].info);
 				}
 			} break;
 
 			case MESSAGE_REQUEST_SEND_PAD_DATA: {
 				u32 chosen_room, client_slot;
 				XINPUT_GAMEPAD pad_state;
-				recv(other_socket, reinterpret_cast<char*>(&chosen_room), sizeof(u32), 0);
-				recv(other_socket, reinterpret_cast<char*>(&pad_state), sizeof(XINPUT_GAMEPAD), 0);
+				Receive(other_socket, &chosen_room);
+				Receive(other_socket, &pad_state);
 
 				if (chosen_room < rooms.size()) {
 					bool found_match = false;
@@ -191,7 +182,7 @@ void ServerImplementation()
 						PadSignal pad_signal;
 						pad_signal.pad_number = client_slot;
 						pad_signal.pad_state = pad_state;
-						send(rooms[chosen_room].host_socket, reinterpret_cast<char*>(&pad_signal), sizeof(PadSignal), 0);
+						Send(rooms[chosen_room].host_socket, pad_signal);
 					}
 				}
 

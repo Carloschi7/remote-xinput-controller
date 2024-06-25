@@ -38,7 +38,9 @@ int main()
 		HostImplementation(local_socket);
 	else 
 		ClientImplementation(local_socket);
-	
+
+	closesocket(local_socket);
+	WSACleanup();
 }
 #endif
 

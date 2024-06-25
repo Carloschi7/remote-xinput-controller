@@ -21,7 +21,7 @@ SOCKET ConnectToServer(const char* address, USHORT port)
 	sockaddr* socket_info = (sockaddr*)&serverAddress;
 	result = connect(connecting_socket, socket_info, sizeof(sockaddr));
 	if (result == -1) {
-		close_host_socket(connecting_socket);
+		closesocket(connecting_socket);
 		return INVALID_SOCKET;
 	}
 
@@ -89,13 +89,13 @@ void HostImplementation(SOCKET host_socket)
 	ConnectionInfo* client_connections = new ConnectionInfo[virtual_pads];
 
 	Message msg = MESSAGE_REQUEST_ROOM_CREATE;
-	send(host_socket, reinterpret_cast<char*>(&msg), sizeof(Message), 0);
-	send(host_socket, reinterpret_cast<char*>(&room_info), sizeof(Room::Info), 0);
+	Send(host_socket, msg);
+	Send(host_socket, room_info);
 
 	for (u32 i = 0; i < virtual_pads; i++) {
 
 		//TODO insert a valid identifier to receive the user
-		u32 error_code = recv(host_socket, reinterpret_cast<char*>(&msg), sizeof(Message), 0);
+		u32 error_code = Receive(host_socket, &msg);
 		if (msg != MESSAGE_INFO_CLIENT_JOINING_ROOM) {
 			//TODO prob should create an assert
 		}
@@ -104,18 +104,14 @@ void HostImplementation(SOCKET host_socket)
 		connection.pad_handle = vigem_target_x360_alloc();
 		const auto controller_connection = vigem_target_add(client, connection.pad_handle);
 
-		if (!VIGEM_SUCCESS(controller_connection))
-		{
-			//TODO tell the server if vigem works fine
+		if (!VIGEM_SUCCESS(controller_connection)) {
 			std::cout << "ViGEm Bus connection failed with error code: " << std::hex << controller_connection;
-
 			msg = MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD;
-			send(host_socket, reinterpret_cast<char*>(&msg), sizeof(Message), 0);
 		}
 		else {
 			msg = MESSAGE_INFO_PAD_ALLOCATED;
-			send(host_socket, reinterpret_cast<char*>(&msg), sizeof(Message), 0);
 		}
+		Send(host_socket, msg);
 
 		//connection.client_thread = std::thread([&concurrency_data, &connection]() { HandleConnection(concurrency_data, connection); });
 		std::cout << "Connection found!!" << std::endl;
@@ -123,7 +119,7 @@ void HostImplementation(SOCKET host_socket)
 
 	while (true) {
 		PadSignal signal;
-		u32 error_code = recv(host_socket, reinterpret_cast<char*>(&signal), sizeof(PadSignal), 0);
+		u32 error_code = Receive(host_socket, &signal);
 
 		//Means an ESC command was issued, so exit the loop
 		if (concurrency_data.last_thread_to_notify == THREAD_TYPE_STOP)

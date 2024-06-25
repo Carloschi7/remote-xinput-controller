@@ -11,6 +11,7 @@
 #include <iostream>
 #include <thread>
 #include <condition_variable>
+#include <type_traits>
 
 #include "types.hpp"
 
@@ -36,13 +37,6 @@ enum ThreadType
 	THREAD_TYPE_STOP,
 };
 
-//TODO this needs to be moved elsewhere some time in the future
-static void close_host_socket(SOCKET socket)
-{
-	closesocket(socket);
-	WSACleanup();
-}
-
 struct PadSignal
 {
 	u32 pad_number;
@@ -67,5 +61,33 @@ struct Room
 	std::condition_variable* notify_cv;
 	Message connecting_message;
 };
+
+
+template<typename T>
+static inline bool Send(SOCKET sock, T& data)
+{
+	static_assert(std::is_trivially_copyable_v<T>, "The type needs to be trivially copiable");
+	s32 error_msg = send(sock, reinterpret_cast<char*>(&data), sizeof(T), 0);
+	if (error_msg == SOCKET_ERROR) {
+		std::cout << "Error with Send func: " << WSAGetLastError() << "\n";
+		return false;
+	}
+
+	return true;
+}
+
+template<typename T>
+static inline bool Receive(SOCKET sock, T* data)
+{
+	static_assert(std::is_trivially_copyable_v<T>, "The type needs to be trivially copiable");
+	s32 error_msg = recv(sock, reinterpret_cast<char*>(data), sizeof(T), 0);
+	if (error_msg == SOCKET_ERROR) {
+		std::cout << "Error with Receive func: " << WSAGetLastError() << "\n";
+		return false;
+	}
+
+	return true;
+}
+
 
 
