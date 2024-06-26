@@ -13,6 +13,8 @@
 #include <condition_variable>
 #include <type_traits>
 
+//#include <SDL.h>
+
 #include "types.hpp"
 
 enum Message
@@ -34,6 +36,12 @@ enum Message
 	MESSAGE_ERROR_ROOM_NO_LONGER_EXISTS
 };
 
+enum ControllerType
+{
+	CONTROLLER_TYPE_XBOX = 0,
+	CONTROLLER_TYPE_DUALSHOCK,
+};
+
 enum ThreadType
 {
 	THREAD_TYPE_CLIENT,
@@ -45,6 +53,8 @@ struct PadSignal
 	u32 pad_number;
 	XINPUT_GAMEPAD pad_state;
 };
+
+
 
 struct Room
 {

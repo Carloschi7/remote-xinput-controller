@@ -19,7 +19,6 @@ int main()
 int main()
 {
 	std::string create_room_or_not, ip;
-
 	std::cout << "insert the server IP:\n";
 	std::cin >> ip;
 
@@ -34,8 +33,9 @@ int main()
 	std::cout << "Create a room? (Y/N)\n";
 	std::cin >> create_room_or_not;
 
-	if (create_room_or_not == "Y")
+	if (create_room_or_not == "Y") {
 		HostImplementation(local_socket);
+	}
 	else 
 		ClientImplementation(local_socket);
 
