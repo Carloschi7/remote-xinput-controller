@@ -128,6 +128,7 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 			Room::Info new_room_info;
 			Receive(other_socket, &new_room_info);
 			Room& room = rooms.emplace_back();
+			room.id = server_data->id_generator++;
 			room.info = new_room_info;
 			room.host_socket = other_socket;
 			room.mtx = new std::mutex;
@@ -142,7 +143,7 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 			Receive(other_socket, &room_to_join);
 
 			if (room_to_join >= rooms.size()) {
-				//TODO need a new message
+				SendMsg(other_socket, MESSAGE_ERROR_INDEX_OUT_OF_BOUNDS);
 				break;
 			}
 
@@ -174,6 +175,7 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 					host_room.connected_sockets[client_slot].slot_taken = true;
 
 					SendMsg(other_socket, MESSAGE_ERROR_NONE);
+					Send(other_socket, host_room.id);
 				}
 				else {
 					SendMsg(other_socket, MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD);
@@ -193,15 +195,24 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 		} break;
 
 		case MESSAGE_REQUEST_SEND_PAD_DATA: {
-			u32 chosen_room, client_slot;
+			u32 room_index = 0, client_slot;
+			u64 room_id;
 			XINPUT_GAMEPAD pad_state;
-			Receive(other_socket, &chosen_room);
+			Receive(other_socket, &room_id);
 			Receive(other_socket, &pad_state);
 
-			bool found_match = false;
-			if (chosen_room < rooms.size()) {
+			bool found_room = false, found_match = false;
+			for (u32 i = 0; i < rooms.size(); i++) {
+				if (rooms[i].id == room_id) {
+					room_index = i;
+					found_room = true;
+					break;
+				}
+			}
+
+			if (found_room) {
 				for (u32 i = 0; i < 4; i++) {
-					if (rooms[chosen_room].connected_sockets[i].sock == other_socket) {
+					if (rooms[room_index].connected_sockets[i].sock == other_socket) {
 						found_match = true;
 						client_slot = i;
 						break;
@@ -214,12 +225,11 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 					pad_signal.pad_number = client_slot;
 					pad_signal.pad_state = pad_state;
 					SendMsg(other_socket, MESSAGE_ERROR_NONE);
-					SendMsg(rooms[chosen_room].host_socket, MESSAGE_REQUEST_SEND_PAD_DATA);
-					Send(rooms[chosen_room].host_socket, pad_signal);
+					SendMsg(rooms[room_index].host_socket, MESSAGE_REQUEST_SEND_PAD_DATA);
+					Send(rooms[room_index].host_socket, pad_signal);
 				}
 			}
-
-			if (!found_match) {
+			else {
 				//Probably the client is looking for an old host_room that
 				//was deleted and does not exist anymore, notify the client
 				SendMsg(other_socket, MESSAGE_ERROR_ROOM_NO_LONGER_EXISTS);

@@ -4,6 +4,7 @@
 
 struct ServerData
 {
+	std::atomic<u64> id_generator;
 	std::mutex rooms_mutex;
 	std::vector<Room> rooms;
 };

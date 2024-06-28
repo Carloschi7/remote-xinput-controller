@@ -59,6 +59,7 @@ void ClientImplementation(SOCKET client_socket)
 	while (true) {
 
 		u32 chosen_room;
+		u64 room_id;
 		Message connection_status = MESSAGE_EMPTY;
 		ControllerType controller_type;
 		u32 controller_id;
@@ -122,7 +123,10 @@ void ClientImplementation(SOCKET client_socket)
 			Send(client_socket, chosen_room);
 			connection_status = ReceiveMsg(client_socket);
 
-			if (connection_status == MESSAGE_ERROR_ROOM_AT_FULL_CAPACITY) {
+			if (connection_status == MESSAGE_ERROR_INDEX_OUT_OF_BOUNDS) {
+				std::cout << "Please, insert a valid room ID\n";
+			}
+			else if (connection_status == MESSAGE_ERROR_ROOM_AT_FULL_CAPACITY) {
 				std::cout << "Could not connect, the room is currently at full capacity\n";
 			}
 			else if (connection_status == MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD) {
@@ -130,6 +134,7 @@ void ClientImplementation(SOCKET client_socket)
 			}
 
 		} while (connection_status != MESSAGE_ERROR_NONE);
+		Receive(client_socket, &room_id);
 
 		std::cout << "Connection was successful!\n";
 
@@ -159,7 +164,7 @@ void ClientImplementation(SOCKET client_socket)
 			if (std::memcmp(&prev_pad_state.Gamepad, &pad_state.Gamepad, sizeof(XINPUT_GAMEPAD)) != 0) {
 
 				SendMsg(client_socket, MESSAGE_REQUEST_SEND_PAD_DATA);
-				Send(client_socket, chosen_room);
+				Send(client_socket, room_id);
 				Send(client_socket, pad_state.Gamepad);
 
 				Message msg = ReceiveMsg(client_socket);

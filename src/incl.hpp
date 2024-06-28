@@ -32,6 +32,7 @@ enum Message
 
 	MESSAGE_ERROR_NONE,
 	MESSAGE_ERROR_ROOM_AT_FULL_CAPACITY,
+	MESSAGE_ERROR_INDEX_OUT_OF_BOUNDS,
 	MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD,
 	MESSAGE_ERROR_ROOM_NO_LONGER_EXISTS
 };
@@ -54,11 +55,10 @@ struct PadSignal
 	XINPUT_GAMEPAD pad_state;
 };
 
-
-
 struct Room
 {
 	//Edited by the server
+	u64 id;
 	SOCKET host_socket = 0;
 	struct {
 		SOCKET sock;
