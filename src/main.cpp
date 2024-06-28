@@ -6,7 +6,7 @@
 
 int main() 
 {
-	ServerImplementation();
+	StartServer();
 }
 
 #else
@@ -14,10 +14,44 @@ int main()
 #include "host.hpp"
 #include "client.hpp"
 
-
-
 int main()
 {
+	std::string controller_test;
+	std::cout << "Welcome to:\n";
+	std::cout << "X    X X X    X XXXXX  X   X XXXXX       XXXX X     X X   X\n";
+	std::cout << " X  X  X XX   X X    X X   X   X         X    XX   XX X   X\n";
+	std::cout << "  XX   X X X  X XXXXX  X   X   X         XXX  X X X X X   X\n";
+	std::cout << "  XX   X X  X X X      X   X   X   XXXX  XXX  X  X  X X   X\n";
+	std::cout << " X  X  X X   XX X      X   X   X         X    X     X X   X\n";
+	std::cout << "X    X X X    X X       XXX    X         XXXX X     X  XXX \n";
+	std::cout << "\n";
+	std::cout << "Before the fun begins, you optionally can test if the program detects correctly your controller according to its type!\n";
+	do {
+		std::cout << "Choose an action\n";
+		std::cout << "Find DualShock pads! (D), find Xbox pads (X), any other button to connect to the hosting server:\n";
+		std::cin >> controller_test;
+
+		if (controller_test == "D") {
+			u32 num = QueryDualshockControllers(nullptr);
+			if (num == 0) {
+				std::cout << "No DualShock controller detected, check if the pad is detected by the system\n";
+			}
+			else {
+				std::cout << num << " Dualshock controller(s) detected!\n";
+			}
+		}
+
+		if (controller_test == "X") {
+			u32 num = QueryXboxControllers(nullptr);
+			if (num == 0) {
+				std::cout << "No Xbox controller detected, check if the pad is detected by the system\n";
+			}
+			else {
+				std::cout << num << " Xbox controller(s) detected!\n";
+			}
+		}
+	} while (controller_test == "D" || controller_test == "X");
+
 	std::string create_room_or_not, ip;
 	std::cout << "insert the server IP:\n";
 	std::cin >> ip;
@@ -30,13 +64,13 @@ int main()
 
 	QueryRooms(local_socket);
 
-	std::cout << "Create a room? (Y/N)\n";
+	std::cout << "Create a room (C) or join one (J) {Anything else to exit}\n";
 	std::cin >> create_room_or_not;
 
-	if (create_room_or_not == "Y") {
+	if (create_room_or_not == "C") {
 		HostImplementation(local_socket);
 	}
-	else 
+	else if (create_room_or_not == "J")
 		ClientImplementation(local_socket);
 
 	closesocket(local_socket);

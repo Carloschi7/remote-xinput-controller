@@ -13,8 +13,6 @@
 #include <condition_variable>
 #include <type_traits>
 
-//#include <SDL.h>
-
 #include "types.hpp"
 
 enum Message

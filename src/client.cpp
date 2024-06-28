@@ -23,44 +23,39 @@ void QueryRooms(SOCKET client_socket)
 	}
 }
 
+u32 QueryDualshockControllers(s32** controller_handles)
+{
+	s32 dualshock_controllers = JslConnectDevices();
+
+	if (controller_handles && dualshock_controllers != 0) {
+		*controller_handles = new s32[dualshock_controllers];
+		JslGetConnectedDeviceHandles(*controller_handles, dualshock_controllers);
+	}
+
+	return dualshock_controllers;
+}
+
+u32 QueryXboxControllers(bool slots[XUSER_MAX_COUNT])
+{
+	u32 xbox_controllers = 0;
+	for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
+		XINPUT_STATE unused = {};
+		s32 pad_read_result = XInputGetState(0, &unused);
+		if (pad_read_result == ERROR_SUCCESS) {
+			xbox_controllers++;
+			
+			if(slots)
+				slots[i] = true;
+
+			break;
+		}
+	}
+
+	return xbox_controllers;
+}
+
 void ClientImplementation(SOCKET client_socket)
 {
-	//switch (controller_type) {
-	//case CONTROLLER_TYPE_DUALSHOCK: {
-	//	s32 number_of_controllers = JslConnectDevices();
-	//	if (number_of_controllers == 0) {
-	//		std::cout << "no Dualshock controller found\n";
-	//		return;
-	//	}
-
-	//	//Select only the first one
-	//	JslGetConnectedDeviceHandles(&dualshock_controller_id, 1);
-	//	if (JslGetControllerType(dualshock_controller_id) != 4) {
-	//		//If is not dualshock false
-	//		std::cout << "The controller is not supported\n";
-	//		return;
-	//	}
-
-
-	//}break;
-	//case CONTROLLER_TYPE_XBOX: {
-	//	
-	//	for (xbox_controller_id = 0; xbox_controller_id < XUSER_MAX_COUNT; xbox_controller_id++) {
-	//		XINPUT_STATE unused = {};
-	//		s32 pad_read_result = XInputGetState(0, &unused);
-	//		if (pad_read_result == ERROR_SUCCESS) {
-	//			break;
-	//		}
-	//	}
-
-	//	if (xbox_controller_id == XUSER_MAX_COUNT) {
-	//		std::cout << "No xbox controller found\n";
-	//		return;
-	//	}
-
-	//}break;
-	//}
-
 	while (true) {
 
 		u32 chosen_room;
@@ -70,34 +65,17 @@ void ClientImplementation(SOCKET client_socket)
 
 		//Check for controllers controllers
 		{
-			s32 dualshock_controllers = JslConnectDevices();
 			s32* controller_handles = nullptr;
-
-			if (dualshock_controllers != 0) {
-				controller_handles = new s32[dualshock_controllers];
-				JslGetConnectedDeviceHandles(controller_handles, dualshock_controllers);
-
-				//TODO need to make sure they are effectively DS4
-			}
-
-			s32 xbox_controllers = 0;
+			u32 dualshock_controllers = QueryDualshockControllers(&controller_handles);
 			bool xbox_slots[4] = {};
-			for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
-				XINPUT_STATE unused = {};
-				s32 pad_read_result = XInputGetState(0, &unused);
-				if (pad_read_result == ERROR_SUCCESS) {
-					xbox_controllers++;
-					xbox_slots[i] = true;
-					break;
-				}
-			}
+			u32 xbox_controllers = QueryXboxControllers(xbox_slots);
 
 			if (dualshock_controllers == 0 && xbox_controllers == 0) {
 				std::cout << "No joypad found, please connect a joypad to the system to be able to use remote play\n";
 				return;
 			}
 
-			std::cout << "Select a controller:\n";
+			std::cout << "Select a controller to use for the room:\n";
 			for (u32 i = 0; i < dualshock_controllers; i++) {
 				std::cout << "#" << i << " -> PS4 pad: " << controller_handles[i] << "\n";
 			}
@@ -108,17 +86,27 @@ void ClientImplementation(SOCKET client_socket)
 					c++;
 				}
 			}
+			
 			u32 sel;
-			std::cin >> sel;
-			controller_type = sel < dualshock_controllers ? CONTROLLER_TYPE_DUALSHOCK : CONTROLLER_TYPE_XBOX;
+			do {
+				std::cin >> sel;
+				controller_type = sel < dualshock_controllers ? CONTROLLER_TYPE_DUALSHOCK : CONTROLLER_TYPE_XBOX;
+			} while (sel >= xbox_controllers + dualshock_controllers);
 
 			if (controller_type == CONTROLLER_TYPE_XBOX) {
-				sel = sel - dualshock_controllers;
+				//Simple list index to xbox pad index conversion
+				sel -= dualshock_controllers;
 				controller_id = 0;
-				while (sel != 0) {
-					for (; xbox_slots[controller_id] == false; controller_id++) {}
-					sel--;
+				for (u32 i = 0; i <= sel; i++) {
+					
+					if (i != 0)
+						controller_id++;
+
+					for (; controller_id < XUSER_MAX_COUNT && !xbox_slots[controller_id]; controller_id++) {}
 				}
+			}
+			else {
+				controller_id = controller_handles[sel];
 			}
 
 			if (controller_handles)
@@ -168,8 +156,6 @@ void ClientImplementation(SOCKET client_socket)
 			}break;
 			}
 
-
-
 			if (std::memcmp(&prev_pad_state.Gamepad, &pad_state.Gamepad, sizeof(XINPUT_GAMEPAD)) != 0) {
 
 				SendMsg(client_socket, MESSAGE_REQUEST_SEND_PAD_DATA);
@@ -185,7 +171,7 @@ void ClientImplementation(SOCKET client_socket)
 				prev_pad_state = pad_state;
 			}
 
-
+			//Dont be too harsh on the CPU
 			Sleep(30);
 		}
 	}

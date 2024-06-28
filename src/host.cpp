@@ -28,19 +28,6 @@ SOCKET ConnectToServer(const char* address, USHORT port)
 	return connecting_socket;
 }
 
-static void StopRoutine(HostConcurrencyData& hcd)
-{
-	while (true) {
-		Sleep(50);
-		if (GetAsyncKeyState(VK_ESCAPE) & 0x8000) {
-			std::scoped_lock notification_lock{ hcd.notification_mutex };
-			hcd.last_thread_to_notify = THREAD_TYPE_STOP;
-			hcd.cond_var.notify_all();
-			break;
-		}
-	}
-}
-
 
 
 void HostImplementation(SOCKET host_socket)
@@ -84,8 +71,6 @@ void HostImplementation(SOCKET host_socket)
 		std::cout << "To run the server u need to have vigem installed\n";
 		return;
 	}
-
-	HostConcurrencyData concurrency_data;
 	ConnectionInfo* client_connections = new ConnectionInfo[virtual_pads];
 
 	SendMsg(host_socket, MESSAGE_REQUEST_ROOM_CREATE);
@@ -111,17 +96,12 @@ void HostImplementation(SOCKET host_socket)
 			SendMsg(host_socket, MESSAGE_INFO_PAD_ALLOCATED);
 		}
 
-		//connection.client_thread = std::thread([&concurrency_data, &connection]() { HandleConnection(concurrency_data, connection); });
 		std::cout << "Connection found!!" << std::endl;
 	}
 
 	while (true) {
 		PadSignal signal;
 		u32 error_code = Receive(host_socket, &signal);
-
-		//Means an ESC command was issued, so exit the loop
-		if (concurrency_data.last_thread_to_notify == THREAD_TYPE_STOP)
-			break;
 		
 		vigem_target_x360_update(client, client_connections[signal.pad_number].pad_handle, *reinterpret_cast<XUSB_REPORT*>(&signal.pad_state));
 		std::cout << "Signal from pad " << signal.pad_number << "\n";
