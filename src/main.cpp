@@ -62,16 +62,19 @@ int main()
 		return -1;
 	}
 
-	QueryRooms(local_socket);
+	while (true) {
 
-	std::cout << "Create a room (C) or join one (J) {Anything else to exit}\n";
-	std::cin >> create_room_or_not;
+		QueryRooms(local_socket);
 
-	if (create_room_or_not == "C") {
-		HostImplementation(local_socket);
+		std::cout << "Create a room (C) or join one (J) {Anything else to exit}\n";
+		std::cin >> create_room_or_not;
+
+		if (create_room_or_not == "C") {
+			HostImplementation(local_socket);
+		}
+		else if (create_room_or_not == "J")
+			ClientImplementation(local_socket);
 	}
-	else if (create_room_or_not == "J")
-		ClientImplementation(local_socket);
 
 	closesocket(local_socket);
 	WSACleanup();

@@ -43,30 +43,47 @@ void StartServer()
 {
 	SOCKET server_socket = SetupServerSocket(20000);
 
-	std::vector<std::thread> host_threads;
+	std::vector<std::thread> server_threads;
 	ServerData server_data;
 
+	server_threads.emplace_back(&PingRooms, &server_data);
 	while (true) {
 		SOCKET new_host = accept(server_socket, nullptr, nullptr);
-		host_threads.emplace_back(&HandleConnection, &server_data, new_host);
+		server_threads.emplace_back(&HandleConnection, &server_data, new_host);
 	}
 
-	for (auto& thd : host_threads)
+	for (auto& thd : server_threads)
 		if (thd.joinable())
 			thd.join();
+}
+
+void PingRooms(ServerData* server_data)
+{
+	//Send some ping request every once in a while, this is mainly done
+	//so that the main host thread can respond also to the host input instead
+	//of activating only when some pad data is sent
+	while (true) {
+		std::unique_lock rooms_lock{ server_data->rooms_mutex };
+		auto& rooms = server_data->rooms;
+		for (u32 i = 0; i < rooms.size(); i++) {
+			SendMsg(rooms[i].host_socket, MESSAGE_INFO_SERVER_PING);
+		}
+		rooms_lock.unlock();
+		Sleep(1000);
+	}
+
 }
 
 void HandleConnection(ServerData* server_data, SOCKET other_socket)
 {
 	bool is_this_client_hosting = false;
 	auto& rooms = server_data->rooms;
-	auto& rooms_mutex = server_data->rooms_mutex;
 
 	while (true) {
 		//We actually care about the possibility of errors here
 		Message msg;
 		bool correct_recv = Receive(other_socket, &msg);
-		std::unique_lock rooms_lock{ rooms_mutex };
+		std::unique_lock rooms_lock{ server_data->rooms_mutex };
 
 		if (!correct_recv) {
 
@@ -129,32 +146,32 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 				break;
 			}
 
-			Room& room = rooms[room_to_join];
-			if (room.info.current_pads < room.info.max_pads) {
-				room.info.current_pads++;
+			Room& host_room = rooms[room_to_join];
+			if (host_room.info.current_pads < host_room.info.max_pads) {
+				host_room.info.current_pads++;
 
-				SendMsg(rooms[room_to_join].host_socket, MESSAGE_INFO_CLIENT_JOINING_ROOM);
+				SendMsg(host_room.host_socket, MESSAGE_INFO_CLIENT_JOINING_ROOM);
 
 				Message host_msg;
 				{
 					//Ask for the host thread if there are any issues during the connecting phase
-					std::unique_lock lk{ *room.mtx };
-					//Always unlock the room lock to allow the host thread to send the connecting message
+					std::unique_lock lk{ *host_room.mtx };
+					//Always unlock the host_room lock to allow the host thread to send the connecting message
 					rooms_lock.unlock();
-					room.notify_cv->wait(lk);
+					host_room.notify_cv->wait(lk);
 					rooms_lock.lock();
-					host_msg = room.connecting_message;
+					host_msg = host_room.connecting_message;
 				}
 
 				Message response;
 				if (host_msg == MESSAGE_ERROR_NONE) {
 
 					u32 client_slot = 0;
-					while (client_slot < XUSER_MAX_COUNT && rooms[room_to_join].connected_sockets[client_slot].slot_taken)
+					while (client_slot < XUSER_MAX_COUNT && host_room.connected_sockets[client_slot].slot_taken)
 						client_slot++;
 
-					rooms[room_to_join].connected_sockets[client_slot].sock = other_socket;
-					rooms[room_to_join].connected_sockets[client_slot].slot_taken = true;
+					host_room.connected_sockets[client_slot].sock = other_socket;
+					host_room.connected_sockets[client_slot].slot_taken = true;
 
 					SendMsg(other_socket, MESSAGE_ERROR_NONE);
 				}
@@ -191,18 +208,19 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 					}
 				}
 
-				//The socket is actually connected to the room
+				//The socket is actually connected to the host_room
 				if (found_match) {
 					PadSignal pad_signal;
 					pad_signal.pad_number = client_slot;
 					pad_signal.pad_state = pad_state;
 					SendMsg(other_socket, MESSAGE_ERROR_NONE);
+					SendMsg(rooms[chosen_room].host_socket, MESSAGE_REQUEST_SEND_PAD_DATA);
 					Send(rooms[chosen_room].host_socket, pad_signal);
 				}
 			}
 
 			if (!found_match) {
-				//Probably the client is looking for an old room that
+				//Probably the client is looking for an old host_room that
 				//was deleted and does not exist anymore, notify the client
 				SendMsg(other_socket, MESSAGE_ERROR_ROOM_NO_LONGER_EXISTS);
 			}
@@ -223,6 +241,17 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 				std::unique_lock lk{ *rooms[room_index].mtx };
 				rooms[room_index].connecting_message = msg == MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD ? msg : MESSAGE_ERROR_NONE;
 				rooms[room_index].notify_cv->notify_one();
+			}
+		}break;
+
+		case MESSAGE_INFO_ROOM_CLOSING: {
+			// TODO, we could notify the room members right away, atm they get notified right after 
+			// having sent more pad data
+			for (u32 i = 0; i < rooms.size(); i++) {
+				if (rooms[i].host_socket == other_socket) {
+					rooms.erase(rooms.begin() + i);
+					break;
+				}
 			}
 		}break;
 		}

@@ -28,6 +28,17 @@ SOCKET ConnectToServer(const char* address, USHORT port)
 	return connecting_socket;
 }
 
+void VigemDeallocate(PVIGEM_CLIENT client, ConnectionInfo* client_connections, u32 count)
+{
+	for (u32 i = 0; i < count; i++) {
+		vigem_target_remove(client, client_connections[i].pad_handle);
+		vigem_target_free(client_connections[i].pad_handle);
+	}
+	delete[] client_connections;
+	vigem_disconnect(client);
+	vigem_free(client);
+}
+
 
 
 void HostImplementation(SOCKET host_socket)
@@ -71,40 +82,71 @@ void HostImplementation(SOCKET host_socket)
 		std::cout << "To run the server u need to have vigem installed\n";
 		return;
 	}
+	//TODO just make an array of PVIGEM_TARGETS
 	ConnectionInfo* client_connections = new ConnectionInfo[virtual_pads];
 
 	SendMsg(host_socket, MESSAGE_REQUEST_ROOM_CREATE);
 	Send(host_socket, room_info);
 
-	for (u32 i = 0; i < virtual_pads; i++) {
+	std::atomic<char> exit_val;
+	std::thread host_input_thd([&exit_val]() {char ch; std::cin >> ch; exit_val.store(ch); });
+
+	for (u32 i = 0; i < virtual_pads;) {
 
 		//TODO insert a valid identifier to receive the user
 		Message msg = ReceiveMsg(host_socket);
-		if (msg != MESSAGE_INFO_CLIENT_JOINING_ROOM) {
-			//TODO prob should create an assert
-		}
 
-		ConnectionInfo& connection = client_connections[i];
-		connection.pad_handle = vigem_target_x360_alloc();
-		const auto controller_connection = vigem_target_add(client, connection.pad_handle);
-
-		if (!VIGEM_SUCCESS(controller_connection)) {
-			std::cout << "ViGEm Bus connection failed with error code: " << std::hex << controller_connection;
-			SendMsg(host_socket, MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD);
+		if (msg == MESSAGE_INFO_SERVER_PING) {
+			if (exit_val.load() == 'X') {
+				std::cout << "Closing room...\n";
+				SendMsg(host_socket, MESSAGE_INFO_ROOM_CLOSING);
+				host_input_thd.join();
+				VigemDeallocate(client, client_connections, i);
+				return;
+			}
 		}
 		else {
-			SendMsg(host_socket, MESSAGE_INFO_PAD_ALLOCATED);
-		}
 
-		std::cout << "Connection found!!" << std::endl;
+			ConnectionInfo& connection = client_connections[i];
+			connection.pad_handle = vigem_target_x360_alloc();
+			const auto controller_connection = vigem_target_add(client, connection.pad_handle);
+
+			if (!VIGEM_SUCCESS(controller_connection)) {
+				std::cout << "ViGEm Bus connection failed with error code: " << std::hex << controller_connection;
+				SendMsg(host_socket, MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD);
+			}
+			else {
+				SendMsg(host_socket, MESSAGE_INFO_PAD_ALLOCATED);
+			}
+
+			std::cout << "Connection found!!" << std::endl;
+			i++;
+		}
 	}
 
+
 	while (true) {
-		PadSignal signal;
-		u32 error_code = Receive(host_socket, &signal);
-		
-		vigem_target_x360_update(client, client_connections[signal.pad_number].pad_handle, *reinterpret_cast<XUSB_REPORT*>(&signal.pad_state));
-		std::cout << "Signal from pad " << signal.pad_number << "\n";
-		std::cout << signal.pad_state.wButtons << std::endl;
+
+		Message msg = ReceiveMsg(host_socket);
+		switch (msg) {
+		case MESSAGE_INFO_SERVER_PING: {
+			//Closing the room
+			if (exit_val.load() == 'X') {
+				std::cout << "Closing room...\n";
+				SendMsg(host_socket, MESSAGE_INFO_ROOM_CLOSING);
+				host_input_thd.join();
+				VigemDeallocate(client, client_connections, virtual_pads);
+				return;
+			}
+		}break;
+		case MESSAGE_REQUEST_SEND_PAD_DATA: {
+			PadSignal signal;
+			u32 error_code = Receive(host_socket, &signal);
+
+			vigem_target_x360_update(client, client_connections[signal.pad_number].pad_handle, *reinterpret_cast<XUSB_REPORT*>(&signal.pad_state));
+			std::cout << "Signal from pad " << signal.pad_number << "\n";
+			std::cout << signal.pad_state.wButtons << std::endl;
+		}break;
+		}
 	}
 }

@@ -165,7 +165,7 @@ void ClientImplementation(SOCKET client_socket)
 				Message msg = ReceiveMsg(client_socket);
 				if (msg == MESSAGE_ERROR_ROOM_NO_LONGER_EXISTS) {
 					std::cout << "Host closed the room or its no longer reachable\n";
-					break;
+					return;
 				}
 
 				prev_pad_state = pad_state;
