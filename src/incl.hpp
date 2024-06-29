@@ -21,6 +21,7 @@ enum Message
 
 	MESSAGE_REQUEST_ROOM_CREATE,
 	MESSAGE_REQUEST_ROOM_JOIN,
+	MESSAGE_REQUEST_ROOM_QUIT,
 	MESSAGE_REQUEST_ROOM_QUERY,
 	MESSAGE_REQUEST_SEND_PAD_DATA,
 
@@ -29,6 +30,7 @@ enum Message
 	MESSAGE_INFO_ROOM_CLOSING,
 	MESSAGE_INFO_CLIENT_JOINING_ROOM,
 	MESSAGE_INFO_PAD_ALLOCATED,
+	MESSAGE_INFO_CLIENT_DISCONNECTED,
 
 	MESSAGE_ERROR_NONE,
 	MESSAGE_ERROR_ROOM_AT_FULL_CAPACITY,
@@ -62,7 +64,7 @@ struct Room
 	SOCKET host_socket = 0;
 	struct {
 		SOCKET sock;
-		bool slot_taken;
+		bool connected;
 	} connected_sockets[4] = {};
 	//Edited by the host
 	struct Info {

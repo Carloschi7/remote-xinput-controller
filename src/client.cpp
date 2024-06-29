@@ -140,7 +140,14 @@ void ClientImplementation(SOCKET client_socket)
 		} while (connection_status != MESSAGE_ERROR_NONE);
 		Receive(client_socket, &room_id);
 
-		std::cout << "Connection was successful!\n";
+		std::cout << "Connection was successful, {X to quit the room}!\n";
+
+		std::atomic<char> quit_signal;
+		std::thread quit_thread([&quit_signal]() {
+			while (true) {
+				char ch; std::cin >> ch;
+				if (ch == 'X') { quit_signal = ch; break; }
+			} });
 
 		XINPUT_STATE prev_pad_state = {};
 		while (true) {
@@ -166,6 +173,14 @@ void ClientImplementation(SOCKET client_socket)
 				if (pad_read_result != ERROR_SUCCESS) {
 				}
 			}break;
+			}
+
+			//Find out if the user wants to quit the room
+			if (quit_signal == 'X') {
+				SendMsg(client_socket, MESSAGE_REQUEST_ROOM_QUIT);
+				Send(client_socket, room_id);
+				quit_thread.join();
+				return;
 			}
 
 			if (std::memcmp(&prev_pad_state.Gamepad, &pad_state.Gamepad, sizeof(XINPUT_GAMEPAD)) != 0) {

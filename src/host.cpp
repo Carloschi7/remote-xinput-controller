@@ -138,7 +138,7 @@ void HostImplementation(SOCKET host_socket)
 			}
 		}
 		else {
-
+			//MESSAGE_REQUEST_ROOM_JOIN
 			ConnectionInfo& connection = client_connections[i];
 			connection.pad_handle = vigem_target_x360_alloc();
 			const auto controller_connection = vigem_target_add(client, connection.pad_handle);
@@ -170,6 +170,13 @@ void HostImplementation(SOCKET host_socket)
 				VigemDeallocate(client, client_connections, virtual_pads);
 				return;
 			}
+		}break;
+		case MESSAGE_INFO_CLIENT_DISCONNECTED: {
+			u32 client_id;
+			Receive(host_socket, &client_id);
+			std::cout << "Client " << client_id << " disconnected\n";
+			vigem_target_remove(client, client_connections[client_id].pad_handle);
+			vigem_target_free(client_connections[client_id].pad_handle);
 		}break;
 		case MESSAGE_REQUEST_SEND_PAD_DATA: {
 			PadSignal signal;

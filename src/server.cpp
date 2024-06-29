@@ -109,7 +109,7 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 					for (u32 j = 0; j < 4; j++) {
 						auto& sock_info = rooms[i].connected_sockets[j];
 						if (other_socket == sock_info.sock) {
-							sock_info.slot_taken = false;
+							sock_info.connected = false;
 							rooms[i].info.current_pads--;
 							break;
 						}
@@ -168,11 +168,11 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 				if (host_msg == MESSAGE_ERROR_NONE) {
 
 					u32 client_slot = 0;
-					while (client_slot < XUSER_MAX_COUNT && host_room.connected_sockets[client_slot].slot_taken)
+					while (client_slot < XUSER_MAX_COUNT && host_room.connected_sockets[client_slot].connected)
 						client_slot++;
 
 					host_room.connected_sockets[client_slot].sock = other_socket;
-					host_room.connected_sockets[client_slot].slot_taken = true;
+					host_room.connected_sockets[client_slot].connected = true;
 
 					SendMsg(other_socket, MESSAGE_ERROR_NONE);
 					Send(other_socket, host_room.id);
@@ -185,7 +185,36 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 				SendMsg(other_socket, MESSAGE_ERROR_ROOM_AT_FULL_CAPACITY);
 			}
 		} break;
+		case MESSAGE_REQUEST_ROOM_QUIT: {
+			if (!is_this_client_hosting) {
+				u64 room_id;
+				Receive(other_socket, &room_id);
 
+				u32 room_index = 0;
+				bool found_room = false;
+
+				for (u32 i = 0; i < rooms.size(); i++) {
+					if (rooms[i].id == room_id) {
+						room_index = i;
+						found_room = true;
+						break;
+					}
+				}
+
+				if (found_room) {
+					Room& current_room = rooms[room_index];
+					for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
+						if (current_room.connected_sockets[i].sock == other_socket) {
+							current_room.connected_sockets[i].connected = false;
+							current_room.info.current_pads--;
+
+							SendMsg(current_room.host_socket, MESSAGE_INFO_CLIENT_DISCONNECTED);
+							Send(current_room.host_socket, i);
+						}
+					}
+				}
+			}
+		}break;
 		case MESSAGE_REQUEST_ROOM_QUERY: {
 			u32 room_count = rooms.size();
 			Send(other_socket, room_count);
