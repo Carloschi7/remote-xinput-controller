@@ -32,6 +32,10 @@ u32 QueryDualshockControllers(s32** controller_handles)
 		JslGetConnectedDeviceHandles(*controller_handles, dualshock_controllers);
 	}
 
+	if (!controller_handles) {
+		JslDisconnectAndDisposeAll();
+	}
+
 	return dualshock_controllers;
 }
 
@@ -144,10 +148,13 @@ void ClientImplementation(SOCKET client_socket)
 			XINPUT_STATE pad_state = {};
 			switch (controller_type) {
 			case CONTROLLER_TYPE_DUALSHOCK: {
+				//Conversion from DS4 data to XBOX data, so that on the host side
+				//we can emulate every controller like it was an xbox one
 				JOY_SHOCK_STATE state = JslGetSimpleState(controller_id);
-				pad_state.Gamepad.wButtons = state.buttons;
-				pad_state.Gamepad.bLeftTrigger = static_cast<u8>(state.lTrigger * 255.0f);
-				pad_state.Gamepad.bRightTrigger = static_cast<u8>(state.rTrigger * 255.0f);
+				//We just care about buttons that range from dpad to the shape buttons
+				pad_state.Gamepad.wButtons = static_cast<u16>(state.buttons & 0x0000FFFF);
+				pad_state.Gamepad.bLeftTrigger = static_cast<u8>(state.lTrigger * 256.0f);
+				pad_state.Gamepad.bRightTrigger = static_cast<u8>(state.rTrigger * 256.0f);
 				pad_state.Gamepad.sThumbLX = static_cast<s16>(state.stickLX * (f32)INT16_MAX);
 				pad_state.Gamepad.sThumbLY = static_cast<s16>(state.stickLY * (f32)INT16_MAX);
 				pad_state.Gamepad.sThumbRX = static_cast<s16>(state.stickRX * (f32)INT16_MAX);

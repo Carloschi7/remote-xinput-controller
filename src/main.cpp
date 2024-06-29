@@ -1,6 +1,5 @@
 //#define SERVER_IMPL
-
-#ifdef SERVER_IMPL
+#if defined SERVER_IMPL
 
 #include "server.hpp"
 

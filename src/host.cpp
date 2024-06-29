@@ -1,5 +1,37 @@
 #include "host.hpp"
 
+void SimulateDualshock()
+{
+	PVIGEM_CLIENT client = vigem_alloc();
+	const auto connection = vigem_connect(client);
+
+	PVIGEM_TARGET pad_handle = vigem_target_ds4_alloc();
+	const auto controller_connection = vigem_target_add(client, pad_handle);
+
+	while (true) {
+		DS4_REPORT report = {};
+
+		memset(&report, 0, sizeof(report));
+		report.wButtons = 0;
+		report.bThumbLX = 128; // Neutral position
+		report.bThumbLY = 128; // Neutral position
+		report.bThumbRX = 128; // Neutral position
+		report.bThumbRY = 128; // Neutral position
+		report.bTriggerL = 0;
+		report.bTriggerR = 0;
+
+		DS4_SET_DPAD(&report, DS4_BUTTON_DPAD_NONE);
+		report.wButtons |= DS4_BUTTON_CROSS;
+		vigem_target_ds4_update(client, pad_handle, report);
+		Sleep(100);
+
+		report.wButtons = 0;
+		DS4_SET_DPAD(&report, DS4_BUTTON_DPAD_NONE);
+		vigem_target_ds4_update(client, pad_handle, report);
+		Sleep(3000);
+	}
+}
+
 SOCKET ConnectToServer(const char* address, USHORT port)
 {
 	SOCKET connecting_socket = INVALID_SOCKET;
