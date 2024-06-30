@@ -15,7 +15,7 @@ int main()
 
 int main()
 {
-	std::string controller_test;
+	char controller_test;
 	std::cout << "Welcome to:\n";
 	std::cout << "X    X X X    X XXXXX  X   X XXXXX       XXXX X     X X   X\n";
 	std::cout << " X  X  X XX   X X    X X   X   X         X    XX   XX X   X\n";
@@ -30,7 +30,7 @@ int main()
 		std::cout << "Find DualShock pads! (D), find Xbox pads (X), any other button to connect to the hosting server:\n";
 		std::cin >> controller_test;
 
-		if (controller_test == "D") {
+		if (controller_test == 'D') {
 			u32 num = QueryDualshockControllers(nullptr);
 			if (num == 0) {
 				std::cout << "No DualShock controller detected, check if the pad is detected by the system\n";
@@ -40,7 +40,7 @@ int main()
 			}
 		}
 
-		if (controller_test == "X") {
+		if (controller_test == 'X') {
 			u32 num = QueryXboxControllers(nullptr);
 			if (num == 0) {
 				std::cout << "No Xbox controller detected, check if the pad is detected by the system\n";
@@ -49,9 +49,10 @@ int main()
 				std::cout << num << " Xbox controller(s) detected!\n";
 			}
 		}
-	} while (controller_test == "D" || controller_test == "X");
+	} while (controller_test == 'D' || controller_test == 'X');
 
-	std::string create_room_or_not, ip;
+	char action;
+	std::string ip;
 	std::cout << "insert the server IP:\n";
 	std::cin >> ip;
 
@@ -62,17 +63,16 @@ int main()
 	}
 
 	while (true) {
-
 		QueryRooms(local_socket);
+		std::cout << "Create a room (C), join a room (J), Query rooms again(Q) {Anything else to exit}\n";
+		std::cin >> action;
 
-		std::cout << "Create a room (C) or join one (J) {Anything else to exit}\n";
-		std::cin >> create_room_or_not;
-
-		if (create_room_or_not == "C") {
+		if (action == 'C')
 			HostImplementation(local_socket);
-		}
-		else if (create_room_or_not == "J")
+		else if (action == 'J')
 			ClientImplementation(local_socket);
+		else if (action == 'Q') {} // Just repeate the loop
+		else break;
 	}
 
 	closesocket(local_socket);

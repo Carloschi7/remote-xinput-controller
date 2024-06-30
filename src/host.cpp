@@ -1,4 +1,6 @@
 #include "host.hpp"
+#include "client.hpp"
+
 
 void SimulateDualshock()
 {
@@ -62,11 +64,17 @@ SOCKET ConnectToServer(const char* address, USHORT port)
 
 void VigemDeallocate(PVIGEM_CLIENT client, ConnectionInfo* client_connections, u32 count)
 {
-	for (u32 i = 0; i < count; i++) {
-		vigem_target_remove(client, client_connections[i].pad_handle);
-		vigem_target_free(client_connections[i].pad_handle);
+	if (client_connections) {
+		for (u32 i = 0; i < count; i++) {
+			if (!client_connections[i].connected)
+				continue;
+
+			vigem_target_remove(client, client_connections[i].pad_handle);
+			vigem_target_free(client_connections[i].pad_handle);
+		}
+
+		delete[] client_connections;
 	}
-	delete[] client_connections;
 	vigem_disconnect(client);
 	vigem_free(client);
 }
@@ -75,12 +83,8 @@ void VigemDeallocate(PVIGEM_CLIENT client, ConnectionInfo* client_connections, u
 
 void HostImplementation(SOCKET host_socket)
 {
-	u32 physical_pads = 0, virtual_pads = 0;
-	for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
-		XINPUT_STATE state;
-		if (XInputGetState(i, &state) == ERROR_SUCCESS)
-			physical_pads++;
-	}
+	u32 physical_pads = QueryDualshockControllers(nullptr) + QueryXboxControllers(nullptr);
+	u32 virtual_pads = 0;
 
 	std::cout << "Numbers of xbox pads to connect (" << XUSER_MAX_COUNT - physical_pads << " slots available)\n";
 	std::cin >> virtual_pads;
@@ -112,35 +116,53 @@ void HostImplementation(SOCKET host_socket)
 	if (!VIGEM_SUCCESS(connection))
 	{
 		std::cout << "To run the server u need to have vigem installed\n";
+		VigemDeallocate(client, nullptr, 0);
 		return;
 	}
-	//TODO just make an array of PVIGEM_TARGETS
+
 	ConnectionInfo* client_connections = new ConnectionInfo[virtual_pads];
 
 	SendMsg(host_socket, MESSAGE_REQUEST_ROOM_CREATE);
 	Send(host_socket, room_info);
 
-	std::atomic<char> exit_val;
-	std::thread host_input_thd([&exit_val]() {char ch; std::cin >> ch; exit_val.store(ch); });
+	std::atomic<char> quit_signal;
+	bool run_loop = true;
+	std::thread host_input_thd([&quit_signal]() {
+		while (true) {
+			char ch; std::cin >> ch;
+			if (ch == 'X') { quit_signal = ch; break; }
+		} });
+	std::cout << "Room created {X to close it}\n";
 
-	for (u32 i = 0; i < virtual_pads;) {
+	while (run_loop) {
 
-		//TODO insert a valid identifier to receive the user
 		Message msg = ReceiveMsg(host_socket);
-
-		if (msg == MESSAGE_INFO_SERVER_PING) {
-			if (exit_val.load() == 'X') {
+		switch (msg) {
+		case MESSAGE_INFO_SERVER_PING: {
+			//Closing the room
+			if (quit_signal.load() == 'X') {
 				std::cout << "Closing room...\n";
 				SendMsg(host_socket, MESSAGE_INFO_ROOM_CLOSING);
 				host_input_thd.join();
-				VigemDeallocate(client, client_connections, i);
-				return;
+				run_loop = false;
 			}
-		}
-		else {
-			//MESSAGE_REQUEST_ROOM_JOIN
-			ConnectionInfo& connection = client_connections[i];
+		}break;
+		case MESSAGE_INFO_CLIENT_JOINING_ROOM: {
+			s32 index = -1;
+			for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
+				if (!client_connections[i].connected) {
+					index = i;
+					break;
+				}
+			}
+
+			//This happens only if the server allows a connection when the room is full
+			//something in the server code is not quite right
+			ASSERT(index != -1);
+
+			ConnectionInfo& connection = client_connections[index];
 			connection.pad_handle = vigem_target_x360_alloc();
+			connection.connected = true;
 			const auto controller_connection = vigem_target_add(client, connection.pad_handle);
 
 			if (!VIGEM_SUCCESS(controller_connection)) {
@@ -152,29 +174,13 @@ void HostImplementation(SOCKET host_socket)
 			}
 
 			std::cout << "Connection found!!" << std::endl;
-			i++;
-		}
-	}
-
-
-	while (true) {
-
-		Message msg = ReceiveMsg(host_socket);
-		switch (msg) {
-		case MESSAGE_INFO_SERVER_PING: {
-			//Closing the room
-			if (exit_val.load() == 'X') {
-				std::cout << "Closing room...\n";
-				SendMsg(host_socket, MESSAGE_INFO_ROOM_CLOSING);
-				host_input_thd.join();
-				VigemDeallocate(client, client_connections, virtual_pads);
-				return;
-			}
-		}break;
+		} break;
 		case MESSAGE_INFO_CLIENT_DISCONNECTED: {
 			u32 client_id;
 			Receive(host_socket, &client_id);
 			std::cout << "Client " << client_id << " disconnected\n";
+			ASSERT(client_connections[client_id].connected);
+			client_connections[client_id].connected = false;
 			vigem_target_remove(client, client_connections[client_id].pad_handle);
 			vigem_target_free(client_connections[client_id].pad_handle);
 		}break;
@@ -188,4 +194,6 @@ void HostImplementation(SOCKET host_socket)
 		}break;
 		}
 	}
+
+	VigemDeallocate(client, client_connections, virtual_pads);
 }

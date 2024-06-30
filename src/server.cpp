@@ -23,7 +23,6 @@ SOCKET SetupServerSocket(USHORT port)
 
 	result = bind(host_socket, (sockaddr*)&server_address, sizeof(server_address));
 	if (result == SOCKET_ERROR) {
-		//TODO Handle this
 		closesocket(host_socket);
 		WSACleanup();
 		return INVALID_SOCKET;
@@ -111,6 +110,9 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 						if (other_socket == sock_info.sock) {
 							sock_info.connected = false;
 							rooms[i].info.current_pads--;
+							SendMsg(rooms[i].host_socket, MESSAGE_INFO_CLIENT_DISCONNECTED);
+							//The connected index from the server should match the one of the host
+							Send(rooms[i].host_socket, j);
 							break;
 						}
 					}
@@ -186,34 +188,36 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 			}
 		} break;
 		case MESSAGE_REQUEST_ROOM_QUIT: {
-			if (!is_this_client_hosting) {
-				u64 room_id;
-				Receive(other_socket, &room_id);
+			if (is_this_client_hosting)
+				break;
 
-				u32 room_index = 0;
-				bool found_room = false;
+			u64 room_id;
+			Receive(other_socket, &room_id);
 
-				for (u32 i = 0; i < rooms.size(); i++) {
-					if (rooms[i].id == room_id) {
-						room_index = i;
-						found_room = true;
-						break;
-					}
+			u32 room_index = 0;
+			bool found_room = false;
+
+			for (u32 i = 0; i < rooms.size(); i++) {
+				if (rooms[i].id == room_id) {
+					room_index = i;
+					found_room = true;
+					break;
 				}
+			}
 
-				if (found_room) {
-					Room& current_room = rooms[room_index];
-					for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
-						if (current_room.connected_sockets[i].sock == other_socket) {
-							current_room.connected_sockets[i].connected = false;
-							current_room.info.current_pads--;
+			if (found_room) {
+				Room& current_room = rooms[room_index];
+				for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
+					if (current_room.connected_sockets[i].sock == other_socket) {
+						current_room.connected_sockets[i].connected = false;
+						current_room.info.current_pads--;
 
-							SendMsg(current_room.host_socket, MESSAGE_INFO_CLIENT_DISCONNECTED);
-							Send(current_room.host_socket, i);
-						}
+						SendMsg(current_room.host_socket, MESSAGE_INFO_CLIENT_DISCONNECTED);
+						Send(current_room.host_socket, i);
 					}
 				}
 			}
+			
 		}break;
 		case MESSAGE_REQUEST_ROOM_QUERY: {
 			u32 room_count = rooms.size();
@@ -224,6 +228,9 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 		} break;
 
 		case MESSAGE_REQUEST_SEND_PAD_DATA: {
+			if (is_this_client_hosting)
+				break;
+
 			u32 room_index = 0, client_slot;
 			u64 room_id;
 			XINPUT_GAMEPAD pad_state;
@@ -256,6 +263,9 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 					SendMsg(other_socket, MESSAGE_ERROR_NONE);
 					SendMsg(rooms[room_index].host_socket, MESSAGE_REQUEST_SEND_PAD_DATA);
 					Send(rooms[room_index].host_socket, pad_signal);
+				}
+				else {
+					SendMsg(other_socket, MESSAGE_ERROR_CLIENT_NOT_CONNECTED);
 				}
 			}
 			else {

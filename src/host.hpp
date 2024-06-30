@@ -5,7 +5,7 @@
 struct ConnectionInfo
 {
 	PVIGEM_TARGET pad_handle;
-	XINPUT_STATE pad_input;
+	bool connected = false;
 };
 
 void SimulateDualshock();
