@@ -8,7 +8,8 @@ struct ConnectionInfo
 	bool connected = false;
 };
 
-void SimulateDualshock();
+void TestXboxPad();
+void TestDualshock();
 SOCKET ConnectToServer(const char* address, USHORT port);
 void VigemDeallocate(PVIGEM_CLIENT client, ConnectionInfo* client_connections, u32 count);
 void HostImplementation(SOCKET host_socket);
