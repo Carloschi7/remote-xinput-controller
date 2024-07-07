@@ -1,6 +1,78 @@
 #include "server.hpp"
 #include <iostream>
 
+static constexpr u32 initial_allocated_room_count = 32;
+
+u32 AllocateNewSyncPrimitive(ServerData* server_data)
+{
+	if (!server_data->sync_primitive_heap_ptr) {
+		server_data->sync_primitive_heap_ptr = new SyncPrimitiveHeap[initial_allocated_room_count];
+		ASSERT(server_data->sync_primitive_heap_count);
+		server_data->sync_primitive_heap_count = initial_allocated_room_count;
+	}
+
+	SyncPrimitiveHeap*& heap_ptr = server_data->sync_primitive_heap_ptr;
+	u32& heap_count = server_data->sync_primitive_heap_count;
+	for (u32 i = 0; i < heap_count; i++) {
+		if (!heap_ptr[i].slot_taken) {
+			heap_ptr[i].slot_taken = true;
+			return i;
+		}
+	}
+
+	//Need to reallocate to create more space
+	std::unique_lock lk{ server_data->heap_mtx };
+	while (server_data->borrows != 0) {
+		lk.unlock();
+		Sleep(20);
+		lk.lock();
+	}
+
+	SyncPrimitiveHeap* new_ptr = new SyncPrimitiveHeap[heap_count * 2];
+	ASSERT(new_ptr);
+	std::memcpy(new_ptr, heap_ptr, heap_count * sizeof(SyncPrimitiveHeap));
+	delete[] heap_ptr;
+	heap_ptr = new_ptr;
+	//Should always be true
+	ASSERT(!heap_ptr[heap_count].slot_taken);
+	u32 index = heap_count;
+	heap_count *= 2;
+
+	return index;
+}
+
+Room::SyncPrimitives* LockSyncPrimitive(ServerData* server_data, u32 index)
+{
+	std::scoped_lock lk{ server_data->heap_mtx };
+	SyncPrimitiveHeap* heap_ptr = server_data->sync_primitive_heap_ptr;
+	u32& heap_count = server_data->sync_primitive_heap_count;
+	if (index < heap_count && heap_ptr[index].slot_taken) {
+		server_data->borrows++;
+		return &heap_ptr[index].data;
+	}
+
+	return nullptr;
+}
+
+void UnlockSyncPrimitive(ServerData* server_data, u32 index)
+{
+	std::scoped_lock lk{ server_data->heap_mtx };
+	SyncPrimitiveHeap* heap_ptr = server_data->sync_primitive_heap_ptr;
+	u32& heap_count = server_data->sync_primitive_heap_count;
+	if (index < heap_count && heap_ptr[index].slot_taken) {
+		server_data->borrows--;
+	}
+}
+
+void FreeSyncPrimitive(ServerData* server_data, u32 index)
+{
+	std::scoped_lock lk{ server_data->heap_mtx };
+	SyncPrimitiveHeap* heap_ptr = server_data->sync_primitive_heap_ptr;
+	u32& heap_count = server_data->sync_primitive_heap_count;
+	if (index < heap_count && heap_ptr[index].slot_taken) {
+		heap_ptr[index].slot_taken = false;
+	}
+}
 
 SOCKET SetupServerSocket(USHORT port)
 {
@@ -37,6 +109,8 @@ SOCKET SetupServerSocket(USHORT port)
 
 	return host_socket;
 }
+
+
 
 void StartServer()
 {
@@ -97,9 +171,7 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 
 				//Should always be true
 				if (socket_room != -1) {
-
-					delete rooms[socket_room].mtx;
-					delete rooms[socket_room].notify_cv;
+					FreeSyncPrimitive(server_data, rooms[socket_room].sync_primitives_index);
 					rooms.erase(rooms.begin() + socket_room);
 				}
 			}
@@ -133,9 +205,8 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 			room.id = server_data->id_generator++;
 			room.info = new_room_info;
 			room.host_socket = other_socket;
-			room.mtx = new std::mutex;
-			room.notify_cv = new std::condition_variable;
-
+			//TODO ugly, change this
+			room.sync_primitives_index = AllocateNewSyncPrimitive(server_data);
 		} break;
 
 		case MESSAGE_REQUEST_ROOM_JOIN: {
@@ -158,12 +229,14 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 				Message host_msg;
 				{
 					//Ask for the host thread if there are any issues during the connecting phase
-					std::unique_lock lk{ *host_room.mtx };
+					Room::SyncPrimitives* sync_primitives = LockSyncPrimitive(server_data, host_room.sync_primitives_index);
+					std::unique_lock lk{ sync_primitives->mtx };
 					//Always unlock the host_room lock to allow the host thread to send the connecting message
 					rooms_lock.unlock();
-					host_room.notify_cv->wait(lk);
+					sync_primitives->notify_cv.wait(lk);
 					rooms_lock.lock();
 					host_msg = host_room.connecting_message;
+					UnlockSyncPrimitive(server_data, host_room.sync_primitives_index);
 				}
 
 				Message response;
@@ -287,9 +360,11 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 					}
 				}
 
-				std::unique_lock lk{ *rooms[room_index].mtx };
+				Room::SyncPrimitives* sync_primitives = LockSyncPrimitive(server_data, rooms[room_index].sync_primitives_index);
+				std::unique_lock lk{ sync_primitives->mtx };
 				rooms[room_index].connecting_message = msg == MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD ? msg : MESSAGE_ERROR_NONE;
-				rooms[room_index].notify_cv->notify_one();
+				sync_primitives->notify_cv.notify_one();
+				UnlockSyncPrimitive(server_data, rooms[room_index].sync_primitives_index);
 			}
 		}break;
 

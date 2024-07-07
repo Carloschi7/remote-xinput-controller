@@ -1,6 +1,7 @@
 #include "host.hpp"
 #include "client.hpp"
-
+#include <string>
+#include <chrono>
 
 void TestXboxPad()
 {
@@ -42,6 +43,58 @@ void TestDualshock()
 		vigem_target_ds4_update(client, pad_handle, report);
 		Sleep(3000);
 	}
+}
+
+void CaptureWindow(const char* process_name)
+{
+	HWND window = FindWindowA(nullptr, process_name);
+	if (!window) {
+		std::cout << "Failed to find the window process\n";
+		return;
+	}
+
+	HDC window_hdc = GetDC(window);
+
+	RECT window_rect;
+	GetWindowRect(window, &window_rect);
+	//Added a small padding that accounts for window padding
+	s32 width = window_rect.right - window_rect.left - 20;
+	s32 height = window_rect.bottom - window_rect.top - 40;
+
+	HDC mem_hdc = CreateCompatibleDC(window_hdc);
+	HBITMAP bitmap = CreateCompatibleBitmap(window_hdc, width, height);
+
+	SelectObject(mem_hdc, bitmap);
+
+	BITMAPINFOHEADER bitmap_header = {};
+	bitmap_header.biSize = sizeof(BITMAPINFOHEADER);
+	bitmap_header.biWidth = width;
+	bitmap_header.biHeight = -height;
+	bitmap_header.biPlanes = 1;
+	bitmap_header.biBitCount = 32;
+	bitmap_header.biCompression = BI_RGB;
+
+	u8* buffer = new u8[width * height * 4];
+	while (true) {
+#ifdef DEBUG_BUILD
+		auto t1 = GetTickCount64();
+		if (!BitBlt(mem_hdc, 0, 0, width, height, window_hdc, 0, 0, SRCCOPY)) {
+			std::cout << "BitBlt failed\n";
+		}
+		GetDIBits(window_hdc, bitmap, 0, height, buffer, (BITMAPINFO*)&bitmap_header, DIB_RGB_COLORS);
+		auto t2 = GetTickCount64();
+		std::cout << "First capture lasted " << t2 - t1 << " milliseconds\n";
+#else
+		if (!BitBlt(mem_hdc, 0, 0, width, height, window_hdc, 0, 0, SRCCOPY)) {
+			std::cout << "BitBlt failed\n";
+		}
+		GetDIBits(window_hdc, bitmap, 0, height, buffer, (BITMAPINFO*)&bitmap_header, DIB_RGB_COLORS);
+#endif
+		//Trying to reach 60 fps in transmission
+		Sleep(1000 / 60);
+	}
+
+	delete[] buffer;
 }
 
 SOCKET ConnectToServer(const char* address, USHORT port)

@@ -10,6 +10,8 @@ struct ConnectionInfo
 
 void TestXboxPad();
 void TestDualshock();
+
+void CaptureWindow(const char* process_name);
 SOCKET ConnectToServer(const char* address, USHORT port);
 void VigemDeallocate(PVIGEM_CLIENT client, ConnectionInfo* client_connections, u32 count);
 void HostImplementation(SOCKET host_socket);

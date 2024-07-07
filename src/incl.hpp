@@ -15,6 +15,10 @@
 
 #include "types.hpp"
 
+#ifndef NDEBUG
+#	define DEBUG_BUILD
+#endif
+
 #define ASSERT(x) if(!(x)){*(int*)0 = 0;}
 
 enum Message
@@ -65,19 +69,28 @@ struct Room
 	//Edited by the server
 	u64 id;
 	SOCKET host_socket = 0;
-	struct {
+
+	struct 
+	{
 		SOCKET sock;
 		bool connected;
 	} connected_sockets[4] = {};
+
 	//Edited by the host
-	struct Info {
+	struct Info 
+	{
 		char name[16];
 		u16 max_pads;
 		u16 current_pads;
 	} info;
 
-	std::mutex* mtx;
-	std::condition_variable* notify_cv;
+	struct SyncPrimitives
+	{
+		std::mutex mtx;
+		std::condition_variable notify_cv;
+	};
+	u32 sync_primitives_index;
+
 	Message connecting_message;
 };
 
