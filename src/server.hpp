@@ -19,7 +19,7 @@ struct ServerData
 	//array of a bunch of SyncPrimitives
 	SyncPrimitiveHeap* sync_primitive_heap_ptr = nullptr;
 	u32 sync_primitive_heap_count;
-	std::atomic<u32> borrows = 0;
+	u32 borrows = 0;
 	std::mutex heap_mtx;
 };
 

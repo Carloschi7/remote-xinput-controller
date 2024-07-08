@@ -5,6 +5,7 @@ static constexpr u32 initial_allocated_room_count = 32;
 
 u32 AllocateNewSyncPrimitive(ServerData* server_data)
 {
+	std::unique_lock lk{ server_data->heap_mtx };
 	if (!server_data->sync_primitive_heap_ptr) {
 		server_data->sync_primitive_heap_ptr = new SyncPrimitiveHeap[initial_allocated_room_count];
 		ASSERT(server_data->sync_primitive_heap_count);
@@ -21,7 +22,6 @@ u32 AllocateNewSyncPrimitive(ServerData* server_data)
 	}
 
 	//Need to reallocate to create more space
-	std::unique_lock lk{ server_data->heap_mtx };
 	while (server_data->borrows != 0) {
 		lk.unlock();
 		Sleep(20);
