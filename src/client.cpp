@@ -163,8 +163,8 @@ void ClientImplementation(SOCKET client_socket)
 			JOY_SHOCK_STATE state = JslGetSimpleState(controller_id);
 			//We just care about buttons that range from dpad to the shape buttons
 			pad_state.Gamepad.wButtons = static_cast<u16>(state.buttons & 0x0000FFFF);
-			pad_state.Gamepad.bLeftTrigger = static_cast<u8>(state.lTrigger * 256.0f);
-			pad_state.Gamepad.bRightTrigger = static_cast<u8>(state.rTrigger * 256.0f);
+			pad_state.Gamepad.bLeftTrigger = static_cast<u8>(state.lTrigger * 255.0f);
+			pad_state.Gamepad.bRightTrigger = static_cast<u8>(state.rTrigger * 255.0f);
 			pad_state.Gamepad.sThumbLX = static_cast<s16>(state.stickLX * (f32)INT16_MAX);
 			pad_state.Gamepad.sThumbLY = static_cast<s16>(state.stickLY * (f32)INT16_MAX);
 			pad_state.Gamepad.sThumbRX = static_cast<s16>(state.stickRX * (f32)INT16_MAX);
@@ -203,19 +203,21 @@ void ClientImplementation(SOCKET client_socket)
 			prev_pad_state = pad_state;
 		}
 	
-		//if (enable_screen_share) {
-		//	Message msg = ReceiveMsg(client_socket);
-		//	if (msg == MESSAGE_REQUEST_SEND_CAPTURED_SCREEN) {
-		//		u32 buffer_size;
-		//		Receive(client_socket, &buffer_size);
-		//		std::vector<u8> buffer(buffer_size);
-		//		ReceiveBuffer(client_socket, buffer.data(), buffer_size);
-		//		FetchCaptureToOpenGL(buffer.data(), buffer_size);
-		//	}
-		//}
-		//else {
-		//}
-		Sleep(30);
+		//TODO, find a way to receive the screen data
+		if (enable_screen_share) {
+			Message msg = ReceiveMsg(client_socket);
+			if (msg == MESSAGE_REQUEST_SEND_CAPTURED_SCREEN) {
+				u32 buffer_size;
+				Receive(client_socket, &buffer_size);
+				std::cout << "Received screen data\n";
+				std::vector<u8> buffer(buffer_size);
+				ReceiveBuffer(client_socket, buffer.data(), buffer_size);
+				FetchCaptureToOpenGL(buffer.data(), buffer_size);
+			}
+		}
+		else {
+			Sleep(30);
+		}
 	}
 
 	JslDisconnectAndDisposeAll();

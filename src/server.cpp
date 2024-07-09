@@ -368,6 +368,7 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 			for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
 				auto& connected_socket = rooms[room_index].connected_sockets[i];
 				if (connected_socket.connected) {
+					SendMsg(connected_socket.sock, MESSAGE_REQUEST_SEND_CAPTURED_SCREEN);
 					Send(connected_socket.sock, buffer_size);
 					SendBuffer(connected_socket.sock, buffer.data(), buffer_size);
 				}

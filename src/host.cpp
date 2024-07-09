@@ -77,25 +77,26 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::ato
 	u8* buffer = new u8[width * height * 4];
 	while (run_loop) {
 #ifdef DEBUG_BUILD
-		auto t1 = GetTickCount64();
-		if (!BitBlt(mem_hdc, 0, 0, width, height, window_hdc, 0, 0, SRCCOPY)) {
-			std::cout << "BitBlt failed\n";
-		}
-		GetDIBits(window_hdc, bitmap, 0, height, buffer, (BITMAPINFO*)&bitmap_header, DIB_RGB_COLORS);
-		auto t2 = GetTickCount64();
-		std::cout << "First capture lasted " << t2 - t1 << " milliseconds\n";
-#else
-		if (!BitBlt(mem_hdc, 0, 0, width, height, window_hdc, 0, 0, SRCCOPY)) {
-			std::cout << "BitBlt failed\n";
-		}
-		GetDIBits(window_hdc, bitmap, 0, height, buffer, (BITMAPINFO*)&bitmap_header, DIB_RGB_COLORS);
+		u64 t1 = GetTickCount64();
 #endif
+		if (!BitBlt(mem_hdc, 0, 0, width, height, window_hdc, 0, 0, SRCCOPY)) {
+			std::cout << "BitBlt failed\n";
+		}
+		GetDIBits(window_hdc, bitmap, 0, height, buffer, (BITMAPINFO*)&bitmap_header, DIB_RGB_COLORS);
+
+
 		SendMsg(server_socket, MESSAGE_REQUEST_SEND_CAPTURED_SCREEN);
 		u32 buffer_size = width * height * 4;
 		Send(server_socket, buffer_size);
+		//TODO too slow, make it faster
 		SendBuffer(server_socket, buffer, buffer_size);
-		//Trying to reach 60 fps in transmission
-		Sleep(1000 / 60);
+
+#ifdef DEBUG_BUILD
+		u64 t2 = GetTickCount64();
+		std::cout << "First capture lasted " << t2 - t1 << " milliseconds\n";
+#endif
+		//Trying to reach 30 fps in transmission
+		Sleep(1000 / 30);
 	}
 
 	delete[] buffer;
@@ -202,7 +203,7 @@ void HostImplementation(SOCKET host_socket)
 		} });
 	std::cout << "Room created {X to close it}\n";
 
-	//std::thread capture_thread([&]() { SendCapturedWindow(host_socket, "Binding of Isaac: Repentance", run_loops); });
+	std::thread capture_thread;
 
 	while (run_loops) {
 
@@ -240,6 +241,9 @@ void HostImplementation(SOCKET host_socket)
 			}
 			else {
 				SendMsg(host_socket, MESSAGE_INFO_PAD_ALLOCATED);
+				//Initialize also the thread
+				if (!capture_thread.joinable())
+					capture_thread = std::thread([&]() { SendCapturedWindow(host_socket, "Binding of Isaac: Repentance", run_loops); });
 			}
 
 			std::cout << "Connection found!!" << std::endl;
@@ -265,6 +269,6 @@ void HostImplementation(SOCKET host_socket)
 	}
 
 	host_input_thd.join();
-	//capture_thread.join();
+	capture_thread.join();
 	VigemDeallocate(client, client_connections, virtual_pads);
 }
