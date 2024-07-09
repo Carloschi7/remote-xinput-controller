@@ -30,6 +30,7 @@ enum Message
 	MESSAGE_REQUEST_ROOM_QUIT,
 	MESSAGE_REQUEST_ROOM_QUERY,
 	MESSAGE_REQUEST_SEND_PAD_DATA,
+	MESSAGE_REQUEST_SEND_CAPTURED_SCREEN,
 
 	MESSAGE_INFO_SERVER_PING,
 	MESSAGE_INFO_ROOM_JOINED,
@@ -141,5 +142,30 @@ static inline bool Receive(SOCKET sock, T* data)
 	return true;
 }
 
+static inline bool SendBuffer(SOCKET sock, void* data, u32 size)
+{
+	//INFO maybe implement data chunking in the future if needed
+	s32 error_msg = send(sock, reinterpret_cast<char*>(data), size, 0);
+	if (error_msg == SOCKET_ERROR) {
+		switch (WSAGetLastError()) {
+		case WSAEFAULT:
+			std::cout << "Error with SendBuffer: the buffer to send is not completely contained in the user address space\n";
+		}
 
+		return false;
+	}
+
+	return true;
+}
+
+static inline bool ReceiveBuffer(SOCKET sock, void* data, u32 size)
+{
+	s32 error_msg = recv(sock, reinterpret_cast<char*>(data), size, 0);
+	if (error_msg == SOCKET_ERROR) {
+		std::cout << "Error with Receive func: " << WSAGetLastError() << "\n";
+		return false;
+	}
+
+	return true;
+}
 

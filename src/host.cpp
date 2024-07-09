@@ -45,7 +45,7 @@ void TestDualshock()
 	}
 }
 
-void CaptureWindow(const char* process_name)
+void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::atomic<bool>& run_loop)
 {
 	HWND window = FindWindowA(nullptr, process_name);
 	if (!window) {
@@ -75,7 +75,7 @@ void CaptureWindow(const char* process_name)
 	bitmap_header.biCompression = BI_RGB;
 
 	u8* buffer = new u8[width * height * 4];
-	while (true) {
+	while (run_loop) {
 #ifdef DEBUG_BUILD
 		auto t1 = GetTickCount64();
 		if (!BitBlt(mem_hdc, 0, 0, width, height, window_hdc, 0, 0, SRCCOPY)) {
@@ -90,6 +90,10 @@ void CaptureWindow(const char* process_name)
 		}
 		GetDIBits(window_hdc, bitmap, 0, height, buffer, (BITMAPINFO*)&bitmap_header, DIB_RGB_COLORS);
 #endif
+		SendMsg(server_socket, MESSAGE_REQUEST_SEND_CAPTURED_SCREEN);
+		u32 buffer_size = width * height * 4;
+		Send(server_socket, buffer_size);
+		SendBuffer(server_socket, buffer, buffer_size);
 		//Trying to reach 60 fps in transmission
 		Sleep(1000 / 60);
 	}
@@ -189,7 +193,8 @@ void HostImplementation(SOCKET host_socket)
 	Send(host_socket, room_info);
 
 	std::atomic<char> quit_signal;
-	bool run_loop = true;
+	std::atomic<bool> run_loops = true;
+
 	std::thread host_input_thd([&quit_signal]() {
 		while (true) {
 			char ch; std::cin >> ch;
@@ -197,7 +202,9 @@ void HostImplementation(SOCKET host_socket)
 		} });
 	std::cout << "Room created {X to close it}\n";
 
-	while (run_loop) {
+	//std::thread capture_thread([&]() { SendCapturedWindow(host_socket, "Binding of Isaac: Repentance", run_loops); });
+
+	while (run_loops) {
 
 		Message msg = ReceiveMsg(host_socket);
 		switch (msg) {
@@ -206,8 +213,7 @@ void HostImplementation(SOCKET host_socket)
 			if (quit_signal.load() == 'X') {
 				std::cout << "Closing room...\n";
 				SendMsg(host_socket, MESSAGE_INFO_ROOM_CLOSING);
-				host_input_thd.join();
-				run_loop = false;
+				run_loops = false;
 			}
 		}break;
 		case MESSAGE_INFO_CLIENT_JOINING_ROOM: {
@@ -258,5 +264,7 @@ void HostImplementation(SOCKET host_socket)
 		}
 	}
 
+	host_input_thd.join();
+	//capture_thread.join();
 	VigemDeallocate(client, client_connections, virtual_pads);
 }

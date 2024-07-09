@@ -21,6 +21,13 @@ struct ServerData
 	u32 sync_primitive_heap_count;
 	u32 borrows = 0;
 	std::mutex heap_mtx;
+
+	~ServerData() {
+		if (sync_primitive_heap_ptr) {
+			delete[] sync_primitive_heap_ptr;
+			sync_primitive_heap_ptr = nullptr;
+		}
+	}
 };
 
 

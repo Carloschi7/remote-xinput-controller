@@ -1,5 +1,8 @@
 #include "client.hpp"
 #include "JoyShockLibrary.h"
+#include <vector>
+
+
 
 void QueryRooms(SOCKET client_socket)
 {
@@ -138,6 +141,7 @@ void ClientImplementation(SOCKET client_socket)
 	Receive(client_socket, &room_id);
 
 	std::cout << "Connection was successful, {X to quit the room}!\n";
+	InitOpenGLContext();
 
 	std::atomic<char> quit_signal;
 	std::thread quit_thread([&quit_signal]() {
@@ -145,6 +149,8 @@ void ClientImplementation(SOCKET client_socket)
 			char ch; std::cin >> ch;
 			if (ch == 'X') { quit_signal = ch; break; }
 		} });
+
+	const bool enable_screen_share = true;
 
 	XINPUT_STATE prev_pad_state = {};
 	while (true) {
@@ -196,11 +202,38 @@ void ClientImplementation(SOCKET client_socket)
 
 			prev_pad_state = pad_state;
 		}
-
-		//Dont be too harsh on the CPU
+	
+		//if (enable_screen_share) {
+		//	Message msg = ReceiveMsg(client_socket);
+		//	if (msg == MESSAGE_REQUEST_SEND_CAPTURED_SCREEN) {
+		//		u32 buffer_size;
+		//		Receive(client_socket, &buffer_size);
+		//		std::vector<u8> buffer(buffer_size);
+		//		ReceiveBuffer(client_socket, buffer.data(), buffer_size);
+		//		FetchCaptureToOpenGL(buffer.data(), buffer_size);
+		//	}
+		//}
+		//else {
+		//}
 		Sleep(30);
 	}
 
 	JslDisconnectAndDisposeAll();
+	DestroyOpenGLContext();
 }
 
+
+void InitOpenGLContext()
+{
+	//TODO
+}
+
+void FetchCaptureToOpenGL(u8* buffer, u32 size)
+{
+	//TODO
+}
+
+void DestroyOpenGLContext()
+{
+	//TODO
+}

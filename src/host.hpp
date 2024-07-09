@@ -11,7 +11,7 @@ struct ConnectionInfo
 void TestXboxPad();
 void TestDualshock();
 
-void CaptureWindow(const char* process_name);
+void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::atomic<bool>& run_loop);
 SOCKET ConnectToServer(const char* address, USHORT port);
 void VigemDeallocate(PVIGEM_CLIENT client, ConnectionInfo* client_connections, u32 count);
 void HostImplementation(SOCKET host_socket);

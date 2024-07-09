@@ -349,6 +349,30 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 
 
 		}break;
+		case MESSAGE_REQUEST_SEND_CAPTURED_SCREEN: {
+			if (!is_this_client_hosting)
+				break;
+
+			s32 room_index = -1;
+			for (u32 i = 0; i < rooms.size(); i++) {
+				if (rooms[i].host_socket == other_socket)
+					room_index = i;
+			}
+			ASSERT(room_index != -1);
+
+			u32 buffer_size;
+			Receive(other_socket, &buffer_size);
+			//TODO this is temporary, should probably care more about the memory
+			std::vector<u8> buffer(buffer_size);
+			ReceiveBuffer(other_socket, buffer.data(), buffer_size);
+			for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
+				auto& connected_socket = rooms[room_index].connected_sockets[i];
+				if (connected_socket.connected) {
+					Send(connected_socket.sock, buffer_size);
+					SendBuffer(connected_socket.sock, buffer.data(), buffer_size);
+				}
+			}
+		}break;
 		case MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD:
 		case MESSAGE_INFO_PAD_ALLOCATED: {
 			if (is_this_client_hosting) {
