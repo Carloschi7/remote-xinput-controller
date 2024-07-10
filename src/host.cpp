@@ -45,6 +45,27 @@ void TestDualshock()
 	}
 }
 
+void GetCapturedWindowDimensions(const char* process_name, u32* width, u32* height)
+{
+	if (!width || !height)
+		return;
+
+	HWND window = FindWindowA(nullptr, process_name);
+	if (!window) {
+		std::cout << "Failed to find the window process\n";
+		*width = 0;
+		*height = 0;
+		return;
+	}
+
+
+	RECT window_rect;
+	GetWindowRect(window, &window_rect);
+	//Added a small padding that accounts for window padding
+	*width = window_rect.right - window_rect.left - 20;
+	*height = window_rect.bottom - window_rect.top - 40;
+}
+
 void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::atomic<bool>& run_loop)
 {
 	HWND window = FindWindowA(nullptr, process_name);
@@ -60,6 +81,11 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::ato
 	//Added a small padding that accounts for window padding
 	s32 width = window_rect.right - window_rect.left - 20;
 	s32 height = window_rect.bottom - window_rect.top - 40;
+
+	if (width < 0 || height < 0) {
+		std::cout << "Windows is not focused properly, please try again\n";
+		return;
+	}
 
 	HDC mem_hdc = CreateCompatibleDC(window_hdc);
 	HBITMAP bitmap = CreateCompatibleBitmap(window_hdc, width, height);
@@ -192,6 +218,13 @@ void HostImplementation(SOCKET host_socket)
 
 	SendMsg(host_socket, MESSAGE_REQUEST_ROOM_CREATE);
 	Send(host_socket, room_info);
+	
+	{
+		u32 width, height;
+		GetCapturedWindowDimensions("Binding of Isaac: Repentance", &width, &height);
+		Send(host_socket, width);
+		Send(host_socket, height);
+	}
 
 	std::atomic<char> quit_signal;
 	std::atomic<bool> run_loops = true;

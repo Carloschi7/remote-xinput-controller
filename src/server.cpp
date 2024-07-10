@@ -201,6 +201,8 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 
 			Room::Info new_room_info;
 			Receive(other_socket, &new_room_info);
+			Receive(other_socket, &new_room_info.host_window_width);
+			Receive(other_socket, &new_room_info.host_window_height);
 			Room& room = rooms.emplace_back();
 			room.id = server_data->id_generator++;
 			room.info = new_room_info;
@@ -251,6 +253,9 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 
 					SendMsg(other_socket, MESSAGE_ERROR_NONE);
 					Send(other_socket, host_room.id);
+					//To display the game in real time if it is enabled
+					Send(other_socket, host_room.info.host_window_width);
+					Send(other_socket, host_room.info.host_window_height);
 				}
 				else {
 					SendMsg(other_socket, MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD);
@@ -369,7 +374,8 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 				auto& connected_socket = rooms[room_index].connected_sockets[i];
 				if (connected_socket.connected) {
 					SendMsg(connected_socket.sock, MESSAGE_REQUEST_SEND_CAPTURED_SCREEN);
-					Send(connected_socket.sock, buffer_size);
+					//The client should no longer need the size
+					//Send(connected_socket.sock, buffer_size);
 					SendBuffer(connected_socket.sock, buffer.data(), buffer_size);
 				}
 			}

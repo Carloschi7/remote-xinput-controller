@@ -21,6 +21,8 @@
 
 #define ASSERT(x) if(!(x)){*(int*)0 = 0;}
 
+constexpr u32 network_chunk_size = 2048;
+
 enum Message
 {
 	MESSAGE_EMPTY = 0,
@@ -83,6 +85,8 @@ struct Room
 		char name[16];
 		u16 max_pads;
 		u16 current_pads;
+		u32 host_window_width;
+		u32 host_window_height;
 	} info;
 
 	struct SyncPrimitives
@@ -91,7 +95,6 @@ struct Room
 		std::condition_variable notify_cv;
 	};
 	u32 sync_primitives_index;
-
 	Message connecting_message;
 };
 
@@ -144,14 +147,29 @@ static inline bool Receive(SOCKET sock, T* data)
 
 static inline bool SendBuffer(SOCKET sock, void* data, u32 size)
 {
-	//INFO maybe implement data chunking in the future if needed
-	s32 error_msg = send(sock, reinterpret_cast<char*>(data), size, 0);
-	if (error_msg == SOCKET_ERROR) {
-		switch (WSAGetLastError()) {
-		case WSAEFAULT:
-			std::cout << "Error with SendBuffer: the buffer to send is not completely contained in the user address space\n";
-		}
+	u32 chunks = size / network_chunk_size;
+	u32 last_bytes = size - chunks * network_chunk_size;
 
+	s32 chunks_error_msg = send(sock, reinterpret_cast<char*>(&chunks), sizeof(u32), 0);
+	s32 last_bytes_error_msg = send(sock, reinterpret_cast<char*>(&last_bytes), sizeof(u32), 0);
+
+	if (chunks_error_msg == SOCKET_ERROR || last_bytes_error_msg == SOCKET_ERROR) {
+		std::cout << "Error with SendBuffer func: " << WSAGetLastError() << "\n";
+		return false;
+	}
+
+	for (u32 i = 0; i < chunks; i++) {
+		s32 error_msg = send(sock, static_cast<char*>(data) + network_chunk_size * i, network_chunk_size, 0);
+		if (error_msg == SOCKET_ERROR) {
+			std::cout << "Error with SendBuffer func: " << WSAGetLastError() << "\n";
+			return false;
+		}
+	}
+
+	//Send the last bytes outside of the chunks
+	s32 error_msg = send(sock, static_cast<char*>(data) + network_chunk_size * chunks, last_bytes, 0);
+	if (error_msg == SOCKET_ERROR) {
+		std::cout << "Error with SendBuffer func: " << WSAGetLastError() << "\n";
 		return false;
 	}
 
@@ -160,9 +178,27 @@ static inline bool SendBuffer(SOCKET sock, void* data, u32 size)
 
 static inline bool ReceiveBuffer(SOCKET sock, void* data, u32 size)
 {
-	s32 error_msg = recv(sock, reinterpret_cast<char*>(data), size, 0);
+	u32 chunks = 0, last_bytes = 0;
+	s32 chunks_error_msg = recv(sock, reinterpret_cast<char*>(&chunks), sizeof(u32), 0);
+	s32 last_bytes_error_msg = recv(sock, reinterpret_cast<char*>(&last_bytes), sizeof(u32), 0);
+
+	if (chunks_error_msg == SOCKET_ERROR || last_bytes_error_msg == SOCKET_ERROR) {
+		std::cout << "Error with ReceiveBuffer func: " << WSAGetLastError() << "\n";
+		return false;
+	}
+
+	for (u32 i = 0; i < chunks; i++) {
+		s32 error_msg = recv(sock, static_cast<char*>(data) + network_chunk_size * i, network_chunk_size, 0);
+		if (error_msg == SOCKET_ERROR) {
+			std::cout << "Error with ReceiveBuffer func: " << WSAGetLastError() << "\n";
+			return false;
+		}
+	}
+
+	//Send the last bytes outside of the chunks
+	s32 error_msg = recv(sock, static_cast<char*>(data) + network_chunk_size * chunks, last_bytes, 0);
 	if (error_msg == SOCKET_ERROR) {
-		std::cout << "Error with Receive func: " << WSAGetLastError() << "\n";
+		std::cout << "Error with ReceiveBuffer func: " << WSAGetLastError() << "\n";
 		return false;
 	}
 
