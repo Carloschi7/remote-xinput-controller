@@ -24,5 +24,5 @@ u32 QueryXboxControllers(bool slots[XUSER_MAX_COUNT]);
 void ClientImplementation(SOCKET client_socket);
 
 HWND InitGameWindowContext(u32 width, u32 height);
-void FetchCaptureToGameWindow();
-void DestroyGameWindowContext(HWND window);
+void FetchCaptureToGameWindow(HWND& hwnd, void* buffer, s32 window_width, s32 window_height);
+void DestroyGameWindowContext(HWND& hwnd);

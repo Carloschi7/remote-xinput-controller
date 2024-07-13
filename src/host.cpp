@@ -121,8 +121,8 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::ato
 		u64 t2 = GetTickCount64();
 		std::cout << "First capture lasted " << t2 - t1 << " milliseconds\n";
 #endif
-		//Trying to reach 30 fps in transmission
-		Sleep(1000 / 30);
+		//Trying to reach 60 fps in transmission
+		Sleep(screen_send_interval_ms);
 	}
 
 	delete[] buffer;

@@ -145,8 +145,8 @@ void ClientImplementation(SOCKET client_socket)
 
 	std::cout << "Connection was successful, {X to quit the room}!\n";
 
-	InitGameWindowContext(window_data.width, window_data.height);
-	//SetTimer(window_data.game_window, 1, 1000 / 30, nullptr);
+	window_data.game_window = InitGameWindowContext(window_data.width, window_data.height);
+	SetTimer(window_data.game_window, 1, screen_send_interval_ms, nullptr);
 
 	std::atomic<char> quit_signal;
 	std::thread quit_thread([&quit_signal]() {
@@ -237,49 +237,13 @@ LRESULT CALLBACK GameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 	case WM_DESTROY:
 		PostQuitMessage(0);
 		return 0;
-
-	case WM_PAINT: {
-		PAINTSTRUCT ps;
-		HDC hdc = BeginPaint(hwnd, &ps);
-
-		// Get the dimensions of the client area
-		RECT rect;
-		GetClientRect(hwnd, &rect);
-		s32 width  = window_data.width;
-		s32 height = window_data.height;
-
-		// Create a bitmap in memory
-		BITMAPINFO bmi = { 0 };
-		bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-		bmi.bmiHeader.biWidth = width;
-		bmi.bmiHeader.biHeight = -height; // Use negative height for top-down DIB
-		bmi.bmiHeader.biPlanes = 1;
-		bmi.bmiHeader.biBitCount = 32;
-		bmi.bmiHeader.biCompression = BI_RGB;
-
-		// Allocate memory for the bitmap
-		void* bits = nullptr;
-		HBITMAP hBitmap = CreateDIBSection(hdc, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
-
-		for (u32 i = 0; i < width * height * 4; i++) {
-			((u8*)bits)[i] = window_data.buffer[i];
-		}
-
-		// Create a memory device context compatible with the window DC
-		HDC memDC = CreateCompatibleDC(hdc);
-		SelectObject(memDC, hBitmap);
-
-		// Blit the bitmap to the window
-		BitBlt(hdc, 0, 0, width, height, memDC, 0, 0, SRCCOPY);
-
-		// Clean up
-		DeleteDC(memDC);
-		DeleteObject(hBitmap);
-
-		EndPaint(hwnd, &ps);
+	case WM_PAINT: 
+		FetchCaptureToGameWindow(hwnd, window_data.buffer.data(), window_data.width, window_data.height);
+	case WM_TIMER:
+		//INFO: probably there is a better way to establish a 60fps stream, but at the moment this is fine
+		InvalidateRect(hwnd, NULL, FALSE);
 	}
 
-	}
 	return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
 
@@ -309,49 +273,42 @@ HWND InitGameWindowContext(u32 width, u32 height)
 	return window;
 }
 
-void FetchCaptureToGameWindow()
+void FetchCaptureToGameWindow(HWND& hwnd, void* buffer, s32 window_width, s32 window_height)
 {
 	PAINTSTRUCT ps;
-	HDC hdc = BeginPaint(window_data.game_window, &ps);
-
-	// Get the dimensions of the client area
-	s32 width = window_data.width;
-	s32 height = window_data.height;
+	HDC hdc = BeginPaint(hwnd, &ps);
 
 	// Create a bitmap in memory
 	BITMAPINFO bmi = { 0 };
 	bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-	bmi.bmiHeader.biWidth = width;
-	bmi.bmiHeader.biHeight = -height; // Use negative height for top-down DIB
+	bmi.bmiHeader.biWidth = window_width;
+	bmi.bmiHeader.biHeight = -window_height; // Use negative height for top-down DIB
 	bmi.bmiHeader.biPlanes = 1;
 	bmi.bmiHeader.biBitCount = 32;
 	bmi.bmiHeader.biCompression = BI_RGB;
 
-	// Allocate memory for the bitmap
-	void* bits = nullptr;
-	HBITMAP hBitmap = CreateDIBSection(hdc, &bmi, DIB_RGB_COLORS, &bits, NULL, 0);
-
-	//std::memcpy(bits, window_data.buffer.data(), window_data.buffer.size());
-
-	for (u32 i = 0; i < width * height * 4; i++) {
-		((u8*)bits)[i] = window_data.buffer[i];
-	}
-
 	// Create a memory device context compatible with the window DC
 	HDC memDC = CreateCompatibleDC(hdc);
-	SelectObject(memDC, hBitmap);
+	HBITMAP hBitmap = CreateCompatibleBitmap(hdc, window_width, window_height);
+	HGDIOBJ gdi_obj = SelectObject(memDC, hBitmap);
+	
+	if (SetDIBits(hdc, hBitmap, 0, window_height, buffer, &bmi, DIB_RGB_COLORS) == 0) {
+		std::cout << "SetDIBits failed\n";
+	}
 
 	// Blit the bitmap to the window
-	BitBlt(hdc, 0, 0, width, height, memDC, 0, 0, SRCCOPY);
+	if (BitBlt(hdc, 0, 0, window_width, window_height, memDC, 0, 0, SRCCOPY) == 0) {
+		std::cout << "BitBlt failed\n";
+	}
 
 	// Clean up
 	DeleteDC(memDC);
 	DeleteObject(hBitmap);
 
-	EndPaint(window_data.game_window, &ps);
+	EndPaint(hwnd, &ps);
 }
 
-void DestroyGameWindowContext(HWND window)
+void DestroyGameWindowContext(HWND& hwnd)
 {
-	DestroyWindow(window);
+	DestroyWindow(hwnd);
 }

@@ -22,6 +22,7 @@
 #define ASSERT(x) if(!(x)){*(int*)0 = 0;}
 
 constexpr u32 network_chunk_size = 2048;
+constexpr u32 screen_send_interval_ms = 1000 / 60;
 
 enum Message
 {
