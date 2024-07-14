@@ -62,8 +62,8 @@ void GetCapturedWindowDimensions(const char* process_name, u32* width, u32* heig
 	RECT window_rect;
 	GetWindowRect(window, &window_rect);
 	//Added a small padding that accounts for window padding
-	*width = window_rect.right - window_rect.left - 20;
-	*height = window_rect.bottom - window_rect.top - 40;
+	*width = window_rect.right - window_rect.left;
+	*height = window_rect.bottom - window_rect.top;
 }
 
 void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::atomic<bool>& run_loop)
@@ -79,8 +79,8 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::ato
 	RECT window_rect;
 	GetWindowRect(window, &window_rect);
 	//Added a small padding that accounts for window padding
-	s32 width = window_rect.right - window_rect.left - 20;
-	s32 height = window_rect.bottom - window_rect.top - 40;
+	s32 width = window_rect.right - window_rect.left;
+	s32 height = window_rect.bottom - window_rect.top;
 
 	if (width < 0 || height < 0) {
 		std::cout << "Windows is not focused properly, please try again\n";

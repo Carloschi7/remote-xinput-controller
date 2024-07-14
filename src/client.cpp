@@ -1,8 +1,5 @@
 #include "client.hpp"
 #include "JoyShockLibrary.h"
-#include <vector>
-
-GameWindowData window_data;
 
 void QueryRooms(SOCKET client_socket)
 {
@@ -138,14 +135,17 @@ void ClientImplementation(SOCKET client_socket)
 		}
 
 	} while (connection_status != MESSAGE_ERROR_NONE);
+
+	GameWindowData window_data;
 	Receive(client_socket, &room_id);
 	Receive(client_socket, &window_data.width);
 	Receive(client_socket, &window_data.height);
-	window_data.buffer.resize(window_data.width * window_data.height * 4);
+
 
 	std::cout << "Connection was successful, {X to quit the room}!\n";
 
-	window_data.game_window = InitGameWindowContext(window_data.width, window_data.height);
+	InitGameWindowContext(&window_data);
+	//ASSERT(SetWindowLongPtrA(window_data.game_window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&window_data)) != 0);
 	SetTimer(window_data.game_window, 1, screen_send_interval_ms, nullptr);
 
 	std::atomic<char> quit_signal;
@@ -232,24 +232,36 @@ void ClientImplementation(SOCKET client_socket)
 	DestroyGameWindowContext(window_data.game_window);
 }
 
-LRESULT CALLBACK GameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) {
+LRESULT CALLBACK GameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
+{
+	static GameWindowData* window_data = nullptr;
 	switch (uMsg) {
 	case WM_DESTROY:
 		PostQuitMessage(0);
+		window_data = nullptr;
 		return 0;
-	case WM_PAINT: 
-		FetchCaptureToGameWindow(hwnd, window_data.buffer.data(), window_data.width, window_data.height);
+	case WM_PAINT:
+		if(window_data)
+			FetchCaptureToGameWindow(hwnd, window_data->buffer.data(), window_data->width, window_data->height);
+		break;
 	case WM_TIMER:
 		//INFO: probably there is a better way to establish a 60fps stream, but at the moment this is fine
-		InvalidateRect(hwnd, NULL, FALSE);
+		InvalidateRect(hwnd, nullptr, FALSE);
+		break;
+	case WM_CREATE: {
+		auto lp_create = reinterpret_cast<LPCREATESTRUCT>(lParam);
+		window_data = reinterpret_cast<GameWindowData*>(lp_create->lpCreateParams);
+	}	break;
 	}
 
 	return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
 
-HWND InitGameWindowContext(u32 width, u32 height)
+void InitGameWindowContext(GameWindowData* window_data)
 {
-	//TODO
+	if (!window_data) return;
+	window_data->buffer.resize(window_data->width * window_data->height * 4);
+
 	HINSTANCE instance = GetModuleHandle(nullptr);
 	const char class_name[] = "Game window";
 	WNDCLASSA window_class = {};
@@ -257,20 +269,22 @@ HWND InitGameWindowContext(u32 width, u32 height)
 	window_class.lpfnWndProc = GameWindowProc;
 	window_class.hInstance = instance;
 	window_class.lpszClassName = class_name;
+	window_class.cbWndExtra = sizeof(GameWindowData);
 
 	RegisterClassA(&window_class);
 
-	HWND window = CreateWindowExA(0, class_name, "Game Window", WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
-		width, height, nullptr, nullptr, instance, nullptr);
+	window_data->game_window = CreateWindowExA(0, class_name, "Game Window",
+		WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
+		window_data->width, window_data->height, 
+		nullptr, nullptr, instance, window_data);
 
-	if (!window) {
+	if (!window_data->game_window) {
 		std::cout << "Failed to create game window\n";
 		u32 error = GetLastError();
-		return 0;
+		return;
 	}
 
-	ShowWindow(window, SW_SHOW);
-	return window;
+	ShowWindow(window_data->game_window, SW_SHOW);
 }
 
 void FetchCaptureToGameWindow(HWND& hwnd, void* buffer, s32 window_width, s32 window_height)

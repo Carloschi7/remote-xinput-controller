@@ -23,6 +23,6 @@ u32 QueryDualshockControllers(s32** controller_handles);
 u32 QueryXboxControllers(bool slots[XUSER_MAX_COUNT]);
 void ClientImplementation(SOCKET client_socket);
 
-HWND InitGameWindowContext(u32 width, u32 height);
+void InitGameWindowContext(GameWindowData* window_data);
 void FetchCaptureToGameWindow(HWND& hwnd, void* buffer, s32 window_width, s32 window_height);
 void DestroyGameWindowContext(HWND& hwnd);
