@@ -66,6 +66,42 @@ void GetCapturedWindowDimensions(const char* process_name, u32* width, u32* heig
 	*height = window_rect.bottom - window_rect.top;
 }
 
+static BOOL EnumerateWindowsCallback(HWND hwnd, LPARAM lparam) 
+{
+	char class_name[max_window_name_length] = {};
+	auto enumerations = std::bit_cast<WindowEnumeration*>(lparam);
+
+	u32 style = GetWindowLong(hwnd, GWL_STYLE);
+	u32 ex_style = GetWindowLong(hwnd, GWL_EXSTYLE);
+
+	if (style & WS_EX_TOOLWINDOW)
+		return TRUE;
+
+	if (!(ex_style & WS_OVERLAPPEDWINDOW))
+		return TRUE;
+
+	GetWindowTextA(hwnd, class_name, sizeof(class_name));
+	
+	if (class_name[0] == 0 ||
+		std::memcmp(class_name, "Default", sizeof("Default") - 1) == 0 ||
+		std::memcmp(class_name, "MSCTFIME", sizeof("MSCTFIME") - 1) == 0) {
+		return TRUE;
+	}
+
+	//interrupt the enumerations if we have too many windows
+	if (enumerations->windows_count >= max_window_enumerations)
+		return FALSE;
+
+	std::memcpy(&enumerations->window_names[max_window_name_length * enumerations->windows_count++],
+		class_name, sizeof(class_name));
+	return TRUE;
+}
+
+void EnumerateWindows(WindowEnumeration* enumerations)
+{
+	EnumWindows(EnumerateWindowsCallback, std::bit_cast<LPARAM>(enumerations));
+}
+
 void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::atomic<bool>& run_loop)
 {
 	HWND window = FindWindowA(nullptr, process_name);
@@ -102,9 +138,6 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::ato
 
 	u8* buffer = new u8[width * height * 4];
 	while (run_loop) {
-#ifdef DEBUG_BUILD
-		u64 t1 = GetTickCount64();
-#endif
 		if (!BitBlt(mem_hdc, 0, 0, width, height, window_hdc, 0, 0, SRCCOPY)) {
 			std::cout << "BitBlt failed\n";
 		}
@@ -117,10 +150,6 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::ato
 		//TODO too slow, make it faster
 		SendBuffer(server_socket, buffer, buffer_size);
 
-#ifdef DEBUG_BUILD
-		u64 t2 = GetTickCount64();
-		std::cout << "First capture lasted " << t2 - t1 << " milliseconds\n";
-#endif
 		//Trying to reach 60 fps in transmission
 		Sleep(screen_send_interval_ms);
 	}
@@ -214,6 +243,38 @@ void HostImplementation(SOCKET host_socket)
 		return;
 	}
 
+	char selected_window_name[max_window_name_length] = {};
+	{
+		WindowEnumeration* enumeration = new WindowEnumeration;
+		ASSERT(enumeration);
+		ZeroMemory(enumeration, sizeof(WindowEnumeration));
+
+		EnumerateWindows(enumeration);
+		u32 window_choice;
+		
+		auto print_single_enumeration = [&](u32 offset) {
+			std::cout << offset << ": {";
+			for (u32 j = 0; j < max_window_name_length && 
+				enumeration->window_names[offset * max_window_name_length + j] != 0;
+				j++) {
+				std::cout << enumeration->window_names[offset * 128 + j];
+			}
+			std::cout << "}\n";
+		};
+
+		for (u32 i = 0; i < enumeration->windows_count; i++) {
+			print_single_enumeration(i);
+		}
+
+		do {
+			std::cout << "Select a valid window to capture from:\n";
+			std::cin >> window_choice;
+		} while (window_choice >= enumeration->windows_count);
+		std::memcpy(selected_window_name, &enumeration->window_names[window_choice * max_window_name_length], max_window_name_length);
+
+		delete enumeration;
+	}
+
 	ConnectionInfo* client_connections = new ConnectionInfo[virtual_pads];
 
 	SendMsg(host_socket, MESSAGE_REQUEST_ROOM_CREATE);
@@ -221,7 +282,7 @@ void HostImplementation(SOCKET host_socket)
 	
 	{
 		u32 width, height;
-		GetCapturedWindowDimensions("Binding of Isaac: Repentance", &width, &height);
+		GetCapturedWindowDimensions(selected_window_name, &width, &height);
 		Send(host_socket, width);
 		Send(host_socket, height);
 	}

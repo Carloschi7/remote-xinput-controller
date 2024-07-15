@@ -144,9 +144,8 @@ void ClientImplementation(SOCKET client_socket)
 
 	std::cout << "Connection was successful, {X to quit the room}!\n";
 
-	InitGameWindowContext(&window_data);
-	//ASSERT(SetWindowLongPtrA(window_data.game_window, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(&window_data)) != 0);
-	SetTimer(window_data.game_window, 1, screen_send_interval_ms, nullptr);
+	HWND game_window = InitGameWindowContext(&window_data);
+	SetTimer(game_window, 1, screen_send_interval_ms, nullptr);
 
 	std::atomic<char> quit_signal;
 	std::thread quit_thread([&quit_signal]() {
@@ -210,10 +209,7 @@ void ClientImplementation(SOCKET client_socket)
 		if (enable_screen_share) {
 			Message msg = ReceiveMsg(client_socket);
 			if (msg == MESSAGE_REQUEST_SEND_CAPTURED_SCREEN) {
-				static u64 counter = 0;
-				std::cout << "Received screen data " << counter++ << "\n";
 				ReceiveBuffer(client_socket, window_data.buffer.data(), window_data.buffer.size());
-				//FetchCaptureToGameWindow();
 			}
 
 			MSG win_msg = {};
@@ -227,9 +223,8 @@ void ClientImplementation(SOCKET client_socket)
 	}
 
 	quit_thread.join();
-	window_data.Clear();
 	JslDisconnectAndDisposeAll();
-	DestroyGameWindowContext(window_data.game_window);
+	DestroyGameWindowContext(game_window);
 }
 
 LRESULT CALLBACK GameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
@@ -257,9 +252,11 @@ LRESULT CALLBACK GameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 	return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
 
-void InitGameWindowContext(GameWindowData* window_data)
+HWND InitGameWindowContext(GameWindowData* window_data)
 {
-	if (!window_data) return;
+	if (!window_data) 
+		return nullptr;
+
 	window_data->buffer.resize(window_data->width * window_data->height * 4);
 
 	HINSTANCE instance = GetModuleHandle(nullptr);
@@ -273,18 +270,19 @@ void InitGameWindowContext(GameWindowData* window_data)
 
 	RegisterClassA(&window_class);
 
-	window_data->game_window = CreateWindowExA(0, class_name, "Game Window",
+	HWND game_window = CreateWindowExA(0, class_name, "Game Window",
 		WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
 		window_data->width, window_data->height, 
 		nullptr, nullptr, instance, window_data);
 
-	if (!window_data->game_window) {
+	if (!game_window) {
 		std::cout << "Failed to create game window\n";
 		u32 error = GetLastError();
-		return;
+		return nullptr;
 	}
 
-	ShowWindow(window_data->game_window, SW_SHOW);
+	ShowWindow(game_window, SW_SHOW);
+	return game_window;
 }
 
 void FetchCaptureToGameWindow(HWND& hwnd, void* buffer, s32 window_width, s32 window_height)

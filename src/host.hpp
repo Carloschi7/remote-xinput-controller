@@ -1,6 +1,10 @@
 #pragma once
 #include "incl.hpp"
 #include <condition_variable>
+#include <string>
+
+static constexpr u32 max_window_name_length = 128;
+static constexpr u32 max_window_enumerations = 128;
 
 struct ConnectionInfo
 {
@@ -8,10 +12,17 @@ struct ConnectionInfo
 	bool connected = false;
 };
 
+struct WindowEnumeration
+{
+	char window_names[max_window_enumerations * max_window_name_length];
+	u32 windows_count;
+};
+
 void TestXboxPad();
 void TestDualshock();
 
 void GetCapturedWindowDimensions(const char* process_name, u32* width, u32* height);
+void EnumerateWindows(WindowEnumeration* enumerations);
 void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::atomic<bool>& run_loop);
 
 SOCKET ConnectToServer(const char* address, USHORT port);
