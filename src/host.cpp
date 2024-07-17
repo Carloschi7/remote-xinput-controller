@@ -124,33 +124,52 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::ato
 	}
 
 	HDC mem_hdc = CreateCompatibleDC(window_hdc);
-	HBITMAP bitmap = CreateCompatibleBitmap(window_hdc, width, height);
 
-	SelectObject(mem_hdc, bitmap);
-
-	BITMAPINFOHEADER bitmap_header = {};
-	bitmap_header.biSize = sizeof(BITMAPINFOHEADER);
-	bitmap_header.biWidth = width;
-	bitmap_header.biHeight = -height;
-	bitmap_header.biPlanes = 1;
-	bitmap_header.biBitCount = 32;
-	bitmap_header.biCompression = BI_RGB;
 
 	u8* buffer = new u8[width * height * 4];
 	while (run_loop) {
-		if (!BitBlt(mem_hdc, 0, 0, width, height, window_hdc, 0, 0, SRCCOPY)) {
-			std::cout << "BitBlt failed\n";
+		//Find out if the host resized the winwow
+		RECT window_rect;
+		GetWindowRect(window, &window_rect);
+		//Added a small padding that accounts for window padding
+		s32 current_width = window_rect.right - window_rect.left;
+		s32 current_height = window_rect.bottom - window_rect.top;
+
+		HBITMAP bitmap = CreateCompatibleBitmap(window_hdc, width, height);
+		SelectObject(mem_hdc, bitmap);
+
+		BITMAPINFOHEADER bitmap_header = {};
+		bitmap_header.biSize = sizeof(BITMAPINFOHEADER);
+		bitmap_header.biWidth = width;
+		bitmap_header.biHeight = -height;
+		bitmap_header.biPlanes = 1;
+		bitmap_header.biBitCount = 32;
+		bitmap_header.biCompression = BI_RGB;
+
+		if (current_width != width || current_height != height) {
+			SendMsg(server_socket, MESSAGE_INFO_CHANGED_CAPTURED_SCREEN_DIMENSIONS);
+			Send(server_socket, current_width);
+			Send(server_socket, current_height);
+			width = current_width;
+			height = current_height;
+
+			delete[] buffer;
+			buffer = new u8[width * height * 4];
 		}
-		GetDIBits(window_hdc, bitmap, 0, height, buffer, (BITMAPINFO*)&bitmap_header, DIB_RGB_COLORS);
+		else {
+			if (!BitBlt(mem_hdc, 0, 0, width, height, window_hdc, 0, 0, SRCCOPY)) {
+				std::cout << "BitBlt failed\n";
+			}
+			GetDIBits(window_hdc, bitmap, 0, height, buffer, (BITMAPINFO*)&bitmap_header, DIB_RGB_COLORS);
 
-
-		SendMsg(server_socket, MESSAGE_REQUEST_SEND_CAPTURED_SCREEN);
-		u32 buffer_size = width * height * 4;
-		Send(server_socket, buffer_size);
-		//TODO too slow, make it faster
-		SendBuffer(server_socket, buffer, buffer_size);
+			SendMsg(server_socket, MESSAGE_REQUEST_SEND_CAPTURED_SCREEN);
+			u32 buffer_size = width * height * 4;
+			Send(server_socket, buffer_size);
+			SendBuffer(server_socket, buffer, buffer_size);
+		}
 
 		//Trying to reach 60 fps in transmission
+		DeleteObject(bitmap);
 		Sleep(screen_send_interval_ms);
 	}
 

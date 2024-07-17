@@ -380,6 +380,30 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 				}
 			}
 		}break;
+		case MESSAGE_INFO_CHANGED_CAPTURED_SCREEN_DIMENSIONS: {
+			if (!is_this_client_hosting)
+				break;
+
+			s32 room_index = -1;
+			for (u32 i = 0; i < rooms.size(); i++) {
+				if (rooms[i].host_socket == other_socket)
+					room_index = i;
+			}
+			ASSERT(room_index != -1);
+
+			s32 new_windows_width, new_windows_height;
+			Receive(other_socket, &new_windows_width);
+			Receive(other_socket, &new_windows_height);
+
+			for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
+				auto& connected_socket = rooms[room_index].connected_sockets[i];
+				if (connected_socket.connected) {
+					SendMsg(connected_socket.sock, MESSAGE_INFO_CHANGED_CAPTURED_SCREEN_DIMENSIONS);
+					Send(connected_socket.sock, new_windows_width);
+					Send(connected_socket.sock, new_windows_height);
+				}
+			}
+		}
 		case MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD:
 		case MESSAGE_INFO_PAD_ALLOCATED: {
 			if (is_this_client_hosting) {
