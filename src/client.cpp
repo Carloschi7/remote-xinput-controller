@@ -138,10 +138,11 @@ void ClientImplementation(SOCKET client_socket)
 
 	GameWindowData window_data;
 	Receive(client_socket, &room_id);
-	Receive(client_socket, &window_data.original_width);
-	Receive(client_socket, &window_data.original_height);
-	window_data.width = window_data.original_width;
-	window_data.height = window_data.original_height;
+	Receive(client_socket, &window_data.src_width);
+	Receive(client_socket, &window_data.src_height);
+	//At the beginning, src and dest dimensions are the same
+	window_data.dst_width = window_data.src_width;
+	window_data.dst_height = window_data.src_height;
 
 	std::cout << "Connection was successful, {X to quit the room}!\n";
 
@@ -213,10 +214,10 @@ void ClientImplementation(SOCKET client_socket)
 				ReceiveBuffer(client_socket, window_data.buffer.data(), window_data.buffer.size());
 			}
 			else if (msg == MESSAGE_INFO_CHANGED_CAPTURED_SCREEN_DIMENSIONS) {
-				Receive(client_socket, &window_data.width);
-				Receive(client_socket, &window_data.height);
+				Receive(client_socket, &window_data.src_width);
+				Receive(client_socket, &window_data.src_height);
 				window_data.on_resize = true;
-				window_data.buffer.resize(window_data.width * window_data.height * 4);
+				window_data.buffer.resize(window_data.src_width * window_data.src_height * 4);
 			}
 
 			MSG win_msg = {};
@@ -244,11 +245,20 @@ LRESULT CALLBACK GameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 		return 0;
 	case WM_PAINT:
 		if (window_data) {
-			if (window_data->on_resize) {
+			/*if (window_data->on_resize) {
 				SetWindowPos(hwnd, nullptr, 0, 0, window_data->width, window_data->height, SWP_NOMOVE | SWP_NOZORDER);
 				window_data->on_resize = false;
-			}
+			}*/
 			FetchCaptureToGameWindow(hwnd, window_data);
+		}
+		break;
+	case WM_SIZE:
+		//TODO there is a bug that happens at resizing freezing the screen, fix it
+		if (window_data) {
+			RECT rect;
+			GetWindowRect(hwnd, &rect);
+			window_data->dst_width = rect.right - rect.left;
+			window_data->dst_height = rect.bottom - rect.top;
 		}
 		break;
 	case WM_TIMER:
@@ -269,23 +279,22 @@ HWND InitGameWindowContext(GameWindowData* window_data)
 	if (!window_data) 
 		return nullptr;
 
-	window_data->buffer.resize(window_data->original_width * window_data->original_height * 4);
+	window_data->buffer.resize(window_data->src_width * window_data->src_height * 4);
 
 	HINSTANCE instance = GetModuleHandle(nullptr);
-	const char class_name[] = "Game window";
-	WNDCLASSA window_class = {};
+	const wchar_t class_name[] = L"Game window";
+	WNDCLASS window_class = {};
 
 	window_class.lpfnWndProc = GameWindowProc;
 	window_class.hInstance = instance;
 	window_class.lpszClassName = class_name;
 	window_class.cbWndExtra = sizeof(GameWindowData);
 
-	RegisterClassA(&window_class);
+	RegisterClass(&window_class);
 
-	u32 dwStyle = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_VISIBLE;
-	HWND game_window = CreateWindowExA(0, class_name, "Game Window",
-		dwStyle, CW_USEDEFAULT, CW_USEDEFAULT,
-		window_data->width, window_data->height, 
+	HWND game_window = CreateWindowEx(0, class_name, L"Game Window",
+		WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
+		window_data->src_width, window_data->src_height, 
 		nullptr, nullptr, instance, window_data);
 
 	if (!game_window) {
@@ -308,18 +317,18 @@ void FetchCaptureToGameWindow(HWND& hwnd, GameWindowData* window_data)
 	// Create a bitmap in memory
 	BITMAPINFO bmi = { 0 };
 	bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-	bmi.bmiHeader.biWidth = window_data->width;
-	bmi.bmiHeader.biHeight = -window_data->height; // Use negative height for top-down DIB
+	bmi.bmiHeader.biWidth = window_data->src_width;
+	bmi.bmiHeader.biHeight = -window_data->src_height; // Use negative height for top-down DIB
 	bmi.bmiHeader.biPlanes = 1;
 	bmi.bmiHeader.biBitCount = 32;
 	bmi.bmiHeader.biCompression = BI_RGB;
 
 	// Create a memory device context compatible with the window DC
 	HDC memDC = CreateCompatibleDC(hdc);
-	HBITMAP hBitmap = CreateCompatibleBitmap(hdc, window_data->width, window_data->height);
+	HBITMAP hBitmap = CreateCompatibleBitmap(hdc, window_data->src_width, window_data->src_height);
 	HGDIOBJ gdi_obj = SelectObject(memDC, hBitmap);
 	
-	if (SetDIBits(hdc, hBitmap, 0, window_data->height, window_data->buffer.data(), &bmi, DIB_RGB_COLORS) == 0) {
+	if (SetDIBits(hdc, hBitmap, 0, window_data->src_height, window_data->buffer.data(), &bmi, DIB_RGB_COLORS) == 0) {
 		std::cout << "SetDIBits failed\n";
 	}
 
@@ -329,14 +338,14 @@ void FetchCaptureToGameWindow(HWND& hwnd, GameWindowData* window_data)
 	//}
 
 	// Blit the bitmap to the window
-	/*if (StretchBlt(hdc, 0, 0, window_data->original_width, window_data->original_height, memDC, 0, 0,
-		window_data->width, window_data->height, SRCCOPY) == 0) {
+	if (StretchBlt(hdc, 0, 0, window_data->dst_width, window_data->dst_height, memDC, 0, 0,
+		window_data->src_width, window_data->src_height, SRCCOPY) == 0) {
 		std::cout << "StretchBlt failed\n";
-	}*/
-
-	if (BitBlt(hdc, 0, 0, window_data->width, window_data->height, memDC, 0, 0, SRCCOPY) == 0) {
-		std::cout << "BitBlt failed\n";
 	}
+
+	/*if (BitBlt(hdc, 0, 0, window_data->width, window_data->height, memDC, 0, 0, SRCCOPY) == 0) {
+		std::cout << "BitBlt failed\n";
+	}*/
 
 	// Clean up
 	DeleteDC(memDC);

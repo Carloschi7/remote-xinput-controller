@@ -154,6 +154,7 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::ato
 			height = current_height;
 
 			delete[] buffer;
+			//TODO replace this with a preallocated array that is resized troughout the process
 			buffer = new u8[width * height * 4];
 		}
 		else {

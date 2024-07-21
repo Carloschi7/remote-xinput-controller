@@ -5,10 +5,10 @@
 struct GameWindowData
 {
 	std::vector<u8> buffer;
-	s32 width;
-	s32 height;
-	s32 original_width;
-	s32 original_height;
+	s32 src_width;
+	s32 src_height;
+	s32 dst_width;
+	s32 dst_height;
 	bool on_resize = false;
 };
 
