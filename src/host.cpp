@@ -383,6 +383,7 @@ void HostImplementation(SOCKET host_socket)
 	}
 
 	host_input_thd.join();
-	capture_thread.join();
+	if(capture_thread.joinable())
+		capture_thread.join();
 	VigemDeallocate(client, client_connections, virtual_pads);
 }

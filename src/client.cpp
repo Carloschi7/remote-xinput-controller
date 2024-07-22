@@ -149,14 +149,37 @@ void ClientImplementation(SOCKET client_socket)
 	HWND game_window = InitGameWindowContext(&window_data);
 	SetTimer(game_window, 1, screen_send_interval_ms, nullptr);
 
-	std::atomic<char> quit_signal;
-	std::thread quit_thread([&quit_signal]() {
+	std::atomic<char> quit_signal = 0;
+	std::atomic<bool> terminate_signal = false;
+	std::thread quit_thread, recv_thread;
+
+	quit_thread = std::thread([&quit_signal]() {
 		while (true) {
 			char ch; std::cin >> ch;
 			if (ch == 'X') { quit_signal = ch; break; }
 		} });
 
-	const bool enable_screen_share = true;
+
+	recv_thread = std::thread([&]() {
+		while (true) {
+			Message msg = ReceiveMsg(client_socket);
+			std::scoped_lock lk{ window_data.buffer_mutex };
+			switch (msg) {
+			case MESSAGE_REQUEST_SEND_CAPTURED_SCREEN:
+				ReceiveBuffer(client_socket, window_data.buffer.data(), window_data.buffer.size());
+				break;
+			case MESSAGE_INFO_CHANGED_CAPTURED_SCREEN_DIMENSIONS:
+				Receive(client_socket, &window_data.src_width);
+				Receive(client_socket, &window_data.src_height);
+				window_data.buffer.resize(window_data.src_width * window_data.src_height * 4);
+				break;
+			case MESSAGE_REQUEST_ROOM_QUIT:
+			case MESSAGE_ERROR_ROOM_NO_LONGER_EXISTS:
+				terminate_signal = true;
+				return;
+			}
+		}
+		});
 
 	XINPUT_STATE prev_pad_state = {};
 	while (true) {
@@ -197,42 +220,25 @@ void ClientImplementation(SOCKET client_socket)
 			Send(client_socket, room_id);
 			Send(client_socket, pad_state.Gamepad);
 
-			Message msg = ReceiveMsg(client_socket);
 			//TODO handle MESSAGE_ERROR_CLIENT_NOT_CONNECTED
-			if (msg == MESSAGE_ERROR_ROOM_NO_LONGER_EXISTS) {
-				std::cout << "Host closed the room or its no longer reachable, press anything to close\n";
-				break;
-			}
-
 			prev_pad_state = pad_state;
 		}
 	
-		//TODO, find a way to receive the screen data
-		if (enable_screen_share) {
-			Message msg = ReceiveMsg(client_socket);
-			if (msg == MESSAGE_REQUEST_SEND_CAPTURED_SCREEN) {
-				ReceiveBuffer(client_socket, window_data.buffer.data(), window_data.buffer.size());
-			}
-			else if (msg == MESSAGE_INFO_CHANGED_CAPTURED_SCREEN_DIMENSIONS) {
-				Receive(client_socket, &window_data.src_width);
-				Receive(client_socket, &window_data.src_height);
-				window_data.on_resize = true;
-				window_data.buffer.resize(window_data.src_width * window_data.src_height * 4);
-			}
+		if (terminate_signal) {
+			std::cout << "Host closed the room or its no longer reachable, press anything to close\n";
+			break;
+		}
 
-			MSG win_msg = {};
-			PeekMessage(&win_msg, 0, 0, 0, PM_REMOVE);
-			TranslateMessage(&win_msg);
-			DispatchMessage(&win_msg);
-		}
-		else {
-			Sleep(30);
-		}
+		MSG win_msg = {};
+		PeekMessage(&win_msg, 0, 0, 0, PM_REMOVE);
+		TranslateMessage(&win_msg);
+		DispatchMessage(&win_msg);
 	}
 
+	recv_thread.join();
 	quit_thread.join();
 	JslDisconnectAndDisposeAll();
-	DestroyGameWindowContext(game_window);
+	DestroyGameWindowContext(game_window, window_data.wnd_class);
 }
 
 LRESULT CALLBACK GameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
@@ -245,10 +251,7 @@ LRESULT CALLBACK GameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 		return 0;
 	case WM_PAINT:
 		if (window_data) {
-			/*if (window_data->on_resize) {
-				SetWindowPos(hwnd, nullptr, 0, 0, window_data->width, window_data->height, SWP_NOMOVE | SWP_NOZORDER);
-				window_data->on_resize = false;
-			}*/
+			std::scoped_lock lk{ window_data->buffer_mutex };
 			FetchCaptureToGameWindow(hwnd, window_data);
 		}
 		break;
@@ -260,7 +263,7 @@ LRESULT CALLBACK GameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 			window_data->dst_width = rect.right - rect.left;
 			window_data->dst_height = rect.bottom - rect.top;
 		}
-		break;
+		return 0;
 	case WM_TIMER:
 		//INFO: probably there is a better way to establish a 60fps stream, but at the moment this is fine
 		InvalidateRect(hwnd, nullptr, FALSE);
@@ -291,6 +294,7 @@ HWND InitGameWindowContext(GameWindowData* window_data)
 	window_class.cbWndExtra = sizeof(GameWindowData);
 
 	RegisterClass(&window_class);
+	window_data->wnd_class = window_class;
 
 	HWND game_window = CreateWindowEx(0, class_name, L"Game Window",
 		WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
@@ -354,7 +358,8 @@ void FetchCaptureToGameWindow(HWND& hwnd, GameWindowData* window_data)
 	EndPaint(hwnd, &ps);
 }
 
-void DestroyGameWindowContext(HWND& hwnd)
+void DestroyGameWindowContext(HWND& hwnd, WNDCLASS& wnd_class)
 {
 	DestroyWindow(hwnd);
+	UnregisterClass(wnd_class.lpszClassName, wnd_class.hInstance);
 }

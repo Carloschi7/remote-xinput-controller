@@ -295,6 +295,8 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 					}
 				}
 			}
+			//Notify the listening thread of the client it needs to shut down
+			SendMsg(other_socket, MESSAGE_REQUEST_ROOM_QUIT);
 			
 		}break;
 		case MESSAGE_REQUEST_ROOM_QUERY: {
@@ -428,6 +430,13 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 			// having sent more pad data
 			for (u32 i = 0; i < rooms.size(); i++) {
 				if (rooms[i].host_socket == other_socket) {
+
+					for (u32 j = 0; j < XUSER_MAX_COUNT; j++) {
+						auto& sk = rooms[i].connected_sockets[j];
+						if(sk.connected)
+							SendMsg(sk.sock, MESSAGE_ERROR_ROOM_NO_LONGER_EXISTS);
+					}
+
 					rooms.erase(rooms.begin() + i);
 					break;
 				}

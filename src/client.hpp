@@ -1,15 +1,17 @@
 #pragma once
 #include "incl.hpp"
 #include <vector>
+#include <mutex>
 
 struct GameWindowData
 {
+	std::mutex buffer_mutex;
 	std::vector<u8> buffer;
 	s32 src_width;
 	s32 src_height;
 	s32 dst_width;
 	s32 dst_height;
-	bool on_resize = false;
+	WNDCLASS wnd_class;
 };
 
 void QueryRooms(SOCKET client_socket);
@@ -19,4 +21,4 @@ void ClientImplementation(SOCKET client_socket);
 
 HWND InitGameWindowContext(GameWindowData* window_data);
 void FetchCaptureToGameWindow(HWND& hwnd, GameWindowData* window_data);
-void DestroyGameWindowContext(HWND& hwnd);
+void DestroyGameWindowContext(HWND& hwnd, WNDCLASS& wnd_class);
