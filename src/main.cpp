@@ -1,4 +1,4 @@
-//#define SERVER_IMPL
+#include "incl.hpp"
 #if defined SERVER_IMPL
 
 #include "server.hpp"

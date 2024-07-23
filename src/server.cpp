@@ -376,8 +376,6 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 				auto& connected_socket = rooms[room_index].connected_sockets[i];
 				if (connected_socket.connected) {
 					SendMsg(connected_socket.sock, MESSAGE_REQUEST_SEND_CAPTURED_SCREEN);
-					//The client should no longer need the size
-					//Send(connected_socket.sock, buffer_size);
 					SendBuffer(connected_socket.sock, buffer.data(), buffer_size);
 				}
 			}

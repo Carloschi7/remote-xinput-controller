@@ -1,5 +1,6 @@
 #pragma once
 #define WIN32_LEAN_AND_MEAN
+//#define SERVER_IMPL
 
 #include <windows.h>
 #include <Xinput.h>
@@ -15,13 +16,14 @@
 
 #include "types.hpp"
 
+
 #ifndef NDEBUG
 #	define DEBUG_BUILD
 #endif
 
 #define ASSERT(x) if(!(x)){*(int*)0 = 0;}
 
-constexpr u32 network_chunk_size = 2048;
+constexpr u32 network_chunk_size = 4096;
 constexpr u32 screen_send_interval_ms = 1000 / 60;
 
 enum Message
@@ -161,6 +163,12 @@ static inline bool SendBuffer(SOCKET sock, void* data, u32 size)
 	}
 
 	for (u32 i = 0; i < chunks; i++) {
+		//Check if the socket is ready to receive
+		fd_set write_set = {};
+		FD_ZERO(&write_set);
+		FD_SET(sock, &write_set);
+
+		s32 socket_ready = select(0, nullptr, &write_set, nullptr, nullptr);
 		s32 error_msg = send(sock, static_cast<char*>(data) + network_chunk_size * i, network_chunk_size, 0);
 		if (error_msg == SOCKET_ERROR) {
 			std::cout << "Error with SendBuffer func: " << WSAGetLastError() << "\n";
@@ -190,6 +198,13 @@ static inline bool ReceiveBuffer(SOCKET sock, void* data, u32 size)
 	}
 
 	for (u32 i = 0; i < chunks; i++) {
+
+		fd_set read_set = {};
+		FD_ZERO(&read_set);
+		FD_SET(sock, &read_set);
+
+		s32 socket_ready = select(0, &read_set, nullptr, nullptr, nullptr);
+
 		s32 error_msg = recv(sock, static_cast<char*>(data) + network_chunk_size * i, network_chunk_size, 0);
 		if (error_msg == SOCKET_ERROR) {
 			std::cout << "Error with ReceiveBuffer func: " << WSAGetLastError() << "\n";

@@ -163,11 +163,13 @@ void ClientImplementation(SOCKET client_socket)
 	recv_thread = std::thread([&]() {
 		while (true) {
 			Message msg = ReceiveMsg(client_socket);
-			std::scoped_lock lk{ window_data.buffer_mutex };
+			//std::scoped_lock lk{ window_data.buffer_mutex };
 			switch (msg) {
-			case MESSAGE_REQUEST_SEND_CAPTURED_SCREEN:
+			case MESSAGE_REQUEST_SEND_CAPTURED_SCREEN: {
 				ReceiveBuffer(client_socket, window_data.buffer.data(), window_data.buffer.size());
-				break;
+				static int i = 0;
+				std::cout << i++ << "Received\n";
+			}break;
 			case MESSAGE_INFO_CHANGED_CAPTURED_SCREEN_DIMENSIONS:
 				Receive(client_socket, &window_data.src_width);
 				Receive(client_socket, &window_data.src_height);
@@ -251,7 +253,7 @@ LRESULT CALLBACK GameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 		return 0;
 	case WM_PAINT:
 		if (window_data) {
-			std::scoped_lock lk{ window_data->buffer_mutex };
+			//std::scoped_lock lk{ window_data->buffer_mutex };
 			FetchCaptureToGameWindow(hwnd, window_data);
 		}
 		break;
@@ -331,7 +333,7 @@ void FetchCaptureToGameWindow(HWND& hwnd, GameWindowData* window_data)
 	HDC memDC = CreateCompatibleDC(hdc);
 	HBITMAP hBitmap = CreateCompatibleBitmap(hdc, window_data->src_width, window_data->src_height);
 	HGDIOBJ gdi_obj = SelectObject(memDC, hBitmap);
-	
+
 	if (SetDIBits(hdc, hBitmap, 0, window_data->src_height, window_data->buffer.data(), &bmi, DIB_RGB_COLORS) == 0) {
 		std::cout << "SetDIBits failed\n";
 	}
