@@ -167,8 +167,6 @@ void ClientImplementation(SOCKET client_socket)
 			switch (msg) {
 			case MESSAGE_REQUEST_SEND_CAPTURED_SCREEN: {
 				ReceiveBuffer(client_socket, window_data.buffer.data(), window_data.buffer.size());
-				static int i = 0;
-				std::cout << i++ << "Received\n";
 			}break;
 			case MESSAGE_INFO_CHANGED_CAPTURED_SCREEN_DIMENSIONS:
 				Receive(client_socket, &window_data.src_width);
