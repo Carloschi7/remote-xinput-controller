@@ -16,7 +16,6 @@
 
 #include "types.hpp"
 
-
 #ifndef NDEBUG
 #	define DEBUG_BUILD
 #endif
@@ -151,36 +150,17 @@ static inline bool Receive(SOCKET sock, T* data)
 
 static inline bool SendBuffer(SOCKET sock, void* data, u32 size)
 {
-	u32 chunks = size / network_chunk_size;
-	u32 last_bytes = size - chunks * network_chunk_size;
+	u32 total_bytes_sent = 0;
+	while (total_bytes_sent < size) {
+		char* current_ptr = static_cast<char*>(data) + total_bytes_sent;
+		s32 len = min(network_chunk_size, size - total_bytes_sent);
 
-	s32 chunks_error_msg = send(sock, reinterpret_cast<char*>(&chunks), sizeof(u32), 0);
-	s32 last_bytes_error_msg = send(sock, reinterpret_cast<char*>(&last_bytes), sizeof(u32), 0);
-
-	if (chunks_error_msg == SOCKET_ERROR || last_bytes_error_msg == SOCKET_ERROR) {
-		std::cout << "Error with SendBuffer func: " << WSAGetLastError() << "\n";
-		return false;
-	}
-
-	for (u32 i = 0; i < chunks; i++) {
-		//Check if the socket is ready to receive
-		fd_set write_set = {};
-		FD_ZERO(&write_set);
-		FD_SET(sock, &write_set);
-
-		s32 socket_ready = select(0, nullptr, &write_set, nullptr, nullptr);
-		s32 error_msg = send(sock, static_cast<char*>(data) + network_chunk_size * i, network_chunk_size, 0);
-		if (error_msg == SOCKET_ERROR) {
-			std::cout << "Error with SendBuffer func: " << WSAGetLastError() << "\n";
+		u32 bytes_sent = send(sock, current_ptr, len, 0);
+		if (bytes_sent == SOCKET_ERROR) {
+			std::cout << "Error with ReceiveBuffer func: " << WSAGetLastError() << "\n";
 			return false;
 		}
-	}
-
-	//Send the last bytes outside of the chunks
-	s32 error_msg = send(sock, static_cast<char*>(data) + network_chunk_size * chunks, last_bytes, 0);
-	if (error_msg == SOCKET_ERROR) {
-		std::cout << "Error with SendBuffer func: " << WSAGetLastError() << "\n";
-		return false;
+		total_bytes_sent += bytes_sent;
 	}
 
 	return true;
@@ -188,35 +168,17 @@ static inline bool SendBuffer(SOCKET sock, void* data, u32 size)
 
 static inline bool ReceiveBuffer(SOCKET sock, void* data, u32 size)
 {
-	u32 chunks = 0, last_bytes = 0;
-	s32 chunks_error_msg = recv(sock, reinterpret_cast<char*>(&chunks), sizeof(u32), 0);
-	s32 last_bytes_error_msg = recv(sock, reinterpret_cast<char*>(&last_bytes), sizeof(u32), 0);
+	u32 total_bytes_received = 0;
+	while (total_bytes_received < size) {
+		char* current_ptr = static_cast<char*>(data) + total_bytes_received;
+		s32 len = min(network_chunk_size, size - total_bytes_received);
 
-	if (chunks_error_msg == SOCKET_ERROR || last_bytes_error_msg == SOCKET_ERROR) {
-		std::cout << "Error with ReceiveBuffer func: " << WSAGetLastError() << "\n";
-		return false;
-	}
-
-	for (u32 i = 0; i < chunks; i++) {
-
-		fd_set read_set = {};
-		FD_ZERO(&read_set);
-		FD_SET(sock, &read_set);
-
-		s32 socket_ready = select(0, &read_set, nullptr, nullptr, nullptr);
-
-		s32 error_msg = recv(sock, static_cast<char*>(data) + network_chunk_size * i, network_chunk_size, 0);
-		if (error_msg == SOCKET_ERROR) {
+		u32 bytes_received = recv(sock, current_ptr, len, 0);
+		if (bytes_received == SOCKET_ERROR) {
 			std::cout << "Error with ReceiveBuffer func: " << WSAGetLastError() << "\n";
 			return false;
 		}
-	}
-
-	//Send the last bytes outside of the chunks
-	s32 error_msg = recv(sock, static_cast<char*>(data) + network_chunk_size * chunks, last_bytes, 0);
-	if (error_msg == SOCKET_ERROR) {
-		std::cout << "Error with ReceiveBuffer func: " << WSAGetLastError() << "\n";
-		return false;
+		total_bytes_received += bytes_received;
 	}
 
 	return true;
