@@ -460,7 +460,7 @@ void HostImplementation(SOCKET host_socket)
 				SendMsg(host_socket, MESSAGE_INFO_PAD_ALLOCATED);
 				//Initialize also the thread
 				if (!capture_thread.joinable())
-					capture_thread = std::thread([&]() { SendCapturedWindow(host_socket, "Binding of Isaac: Repentance", run_loops); });
+					capture_thread = std::thread([&]() { SendCapturedWindow(host_socket, selected_window_name, run_loops); });
 			}
 
 			std::cout << "Connection found!!" << std::endl;
