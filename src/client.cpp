@@ -161,12 +161,31 @@ void ClientImplementation(SOCKET client_socket)
 
 
 	recv_thread = std::thread([&]() {
+		u32 max_changed_regions = 10000;
+		PartialCapture* captures = new PartialCapture[max_changed_regions];
 		while (true) {
 			Message msg = ReceiveMsg(client_socket);
+
 			//std::scoped_lock lk{ window_data.buffer_mutex };
 			switch (msg) {
-			case MESSAGE_REQUEST_SEND_CAPTURED_SCREEN: {
+			case MESSAGE_REQUEST_SEND_COMPLETE_CAPTURE: {
 				ReceiveBuffer(client_socket, window_data.buffer.data(), window_data.buffer.size());
+			}break;
+			case MESSAGE_REQUEST_SEND_PARTIAL_CAPTURE: {
+				u32 changed_regions;
+				Receive(client_socket, &changed_regions);
+				if (changed_regions >= max_changed_regions) {
+					delete[] captures;
+					max_changed_regions = changed_regions;
+					captures = new PartialCapture[max_changed_regions];
+				}
+
+				ReceiveBuffer(client_socket, captures, changed_regions * sizeof(PartialCapture));
+
+				for (u32 i = 0; i < changed_regions; i++) {
+					PartialCapture& capture = captures[i];
+					ReceiveBuffer(client_socket, window_data.buffer.data() + capture.begin_index, capture.end_index - capture.begin_index);
+				}
 			}break;
 			case MESSAGE_INFO_CHANGED_CAPTURED_SCREEN_DIMENSIONS:
 				Receive(client_socket, &window_data.src_width);
@@ -176,10 +195,12 @@ void ClientImplementation(SOCKET client_socket)
 			case MESSAGE_REQUEST_ROOM_QUIT:
 			case MESSAGE_ERROR_ROOM_NO_LONGER_EXISTS:
 				terminate_signal = true;
+				delete[] captures;
 				return;
 			}
 		}
-		});
+		delete[] captures;
+	});
 
 	XINPUT_STATE prev_pad_state = {};
 	while (true) {

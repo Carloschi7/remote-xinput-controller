@@ -24,6 +24,9 @@ void TestDualshock();
 void GetCapturedWindowDimensions(const char* process_name, u32* width, u32* height);
 void EnumerateWindows(WindowEnumeration* enumerations);
 void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::atomic<bool>& run_loop);
+u32 GetChangedRegionsCount(u8* curr_buffer, u8* prev_buffer, u32 size);
+void GetChangedRegions(u8* curr_buffer, u8* prev_buffer, u32 size, PartialCapture* captures);
+
 
 SOCKET ConnectToServer(const char* address, USHORT port);
 void VigemDeallocate(PVIGEM_CLIENT client, ConnectionInfo* client_connections, u32 count);

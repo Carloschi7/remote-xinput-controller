@@ -356,7 +356,7 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 
 
 		}break;
-		case MESSAGE_REQUEST_SEND_CAPTURED_SCREEN: {
+		case MESSAGE_REQUEST_SEND_COMPLETE_CAPTURE: {
 			if (!is_this_client_hosting)
 				break;
 
@@ -375,10 +375,52 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 			for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
 				auto& connected_socket = rooms[room_index].connected_sockets[i];
 				if (connected_socket.connected) {
-					SendMsg(connected_socket.sock, MESSAGE_REQUEST_SEND_CAPTURED_SCREEN);
+					SendMsg(connected_socket.sock, MESSAGE_REQUEST_SEND_COMPLETE_CAPTURE);
 					SendBuffer(connected_socket.sock, buffer.data(), buffer_size);
 				}
 			}
+		}break;
+		case MESSAGE_REQUEST_SEND_PARTIAL_CAPTURE: {
+			if (!is_this_client_hosting)
+				break;
+
+			s32 room_index = -1;
+			for (u32 i = 0; i < rooms.size(); i++) {
+				if (rooms[i].host_socket == other_socket)
+					room_index = i;
+			}
+			ASSERT(room_index != -1);
+			u32 changed_regions;
+
+			Receive(other_socket, &changed_regions);
+			//TODO fix this, extremely slow
+			PartialCapture* captures = new PartialCapture[changed_regions];
+			ReceiveBuffer(other_socket, captures, changed_regions * sizeof(PartialCapture));
+			u32 partial_buffer_size = 0;
+
+			for (u32 i = 0; i < changed_regions; i++)
+				partial_buffer_size += captures[i].end_index - captures[i].begin_index;
+
+			std::vector<u8> buffer(partial_buffer_size);
+			u32 buffer_offset = 0;
+			for (u32 i = 0; i < changed_regions; i++) {
+				PartialCapture& capture = captures[i];
+				ReceiveBuffer(other_socket, buffer.data() + buffer_offset, capture.end_index - capture.begin_index);
+				buffer_offset += capture.end_index - capture.begin_index;
+			}
+
+			for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
+				auto& connected_socket = rooms[room_index].connected_sockets[i];
+				if (connected_socket.connected) {
+					SendMsg(connected_socket.sock, MESSAGE_REQUEST_SEND_PARTIAL_CAPTURE);
+					Send(connected_socket.sock, changed_regions);
+					SendBuffer(connected_socket.sock, captures, changed_regions * sizeof(PartialCapture));
+					SendBuffer(connected_socket.sock, buffer.data(), buffer.size());
+				}
+			}
+
+			delete[] captures;
+
 		}break;
 		case MESSAGE_INFO_CHANGED_CAPTURED_SCREEN_DIMENSIONS: {
 			if (!is_this_client_hosting)

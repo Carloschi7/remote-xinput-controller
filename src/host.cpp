@@ -2,6 +2,9 @@
 #include "client.hpp"
 #include <string>
 #include <chrono>
+#include <atomic>
+
+std::atomic<bool> complete_capture_required = true;
 
 void TestXboxPad()
 {
@@ -125,8 +128,9 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::ato
 
 	HDC mem_hdc = CreateCompatibleDC(window_hdc);
 
-
-	u8* buffer = new u8[width * height * 4];
+	bool use_first_buffer = true;
+	u8* first_buffer = new u8[width * height * 4];
+	u8* second_buffer = new u8[width * height * 4];
 	while (run_loop) {
 		//Find out if the host resized the winwow
 		RECT window_rect;
@@ -153,20 +157,66 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::ato
 			width = current_width;
 			height = current_height;
 
-			delete[] buffer;
+			delete[] first_buffer;
+			delete[] second_buffer;
 			//TODO replace this with a preallocated array that is resized troughout the process
-			buffer = new u8[width * height * 4];
+			first_buffer = new u8[width * height * 4];
+			second_buffer = new u8[width * height * 4];
 		}
 		else {
 			if (!BitBlt(mem_hdc, 0, 0, width, height, window_hdc, 0, 0, SRCCOPY)) {
 				std::cout << "BitBlt failed\n";
 			}
-			GetDIBits(window_hdc, bitmap, 0, height, buffer, (BITMAPINFO*)&bitmap_header, DIB_RGB_COLORS);
 
-			SendMsg(server_socket, MESSAGE_REQUEST_SEND_CAPTURED_SCREEN);
 			u32 buffer_size = width * height * 4;
-			Send(server_socket, buffer_size);
-			SendBuffer(server_socket, buffer, buffer_size);
+			if (complete_capture_required) {
+
+				GetDIBits(window_hdc, bitmap, 0, height, first_buffer, (BITMAPINFO*)&bitmap_header, DIB_RGB_COLORS);
+
+				SendMsg(server_socket, MESSAGE_REQUEST_SEND_COMPLETE_CAPTURE);
+
+				Send(server_socket, buffer_size);
+				SendBuffer(server_socket, first_buffer, buffer_size);
+				complete_capture_required = false;
+				use_first_buffer = false;
+			}
+			else {
+
+				if (use_first_buffer) {
+					GetDIBits(window_hdc, bitmap, 0, height, first_buffer, (BITMAPINFO*)&bitmap_header, DIB_RGB_COLORS);
+
+					u32 changed_regions = GetChangedRegionsCount(first_buffer, second_buffer, buffer_size);
+					PartialCapture* captures = new PartialCapture[changed_regions];
+					GetChangedRegions(first_buffer, second_buffer, buffer_size, captures);
+					SendMsg(server_socket, MESSAGE_REQUEST_SEND_PARTIAL_CAPTURE);
+					Send(server_socket, changed_regions);
+					SendBuffer(server_socket, captures, changed_regions * sizeof(PartialCapture));
+					for (u32 i = 0; i < changed_regions; i++) {
+						PartialCapture& capture = captures[i];
+						SendBuffer(server_socket, first_buffer + capture.begin_index, capture.end_index - capture.begin_index);
+					}
+
+					delete[] captures;
+					use_first_buffer = false;
+				}
+				else {
+					GetDIBits(window_hdc, bitmap, 0, height, second_buffer, (BITMAPINFO*)&bitmap_header, DIB_RGB_COLORS);
+
+					u32 changed_regions = GetChangedRegionsCount(second_buffer, first_buffer, buffer_size);
+					PartialCapture* captures = new PartialCapture[changed_regions];
+					GetChangedRegions(second_buffer, first_buffer, buffer_size, captures);
+					SendMsg(server_socket, MESSAGE_REQUEST_SEND_PARTIAL_CAPTURE);
+					Send(server_socket, changed_regions);
+					SendBuffer(server_socket, captures, changed_regions * sizeof(PartialCapture));
+					for (u32 i = 0; i < changed_regions; i++) {
+						PartialCapture& capture = captures[i];
+						SendBuffer(server_socket, second_buffer + capture.begin_index, capture.end_index - capture.begin_index);
+					}
+
+					delete[] captures;
+					use_first_buffer = true;
+				}
+			}
 		}
 
 		//Trying to reach 60 fps in transmission
@@ -174,7 +224,60 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::ato
 		Sleep(screen_send_interval_ms);
 	}
 
-	delete[] buffer;
+	delete[] first_buffer;
+	delete[] second_buffer;
+}
+
+u32 GetChangedRegionsCount(u8* curr_buffer, u8* prev_buffer, u32 size)
+{
+	if (!curr_buffer || !prev_buffer)
+		return 0;
+
+	size /= sizeof(u32);
+	u32* curr_buffer_u32 = reinterpret_cast<u32*>(curr_buffer);
+	u32* prev_buffer_u32 = reinterpret_cast<u32*>(prev_buffer);
+
+	u32 regions = 0;
+	bool changed_region = false;
+	for (u32 i = 0; i < size; i++) {
+		if (curr_buffer_u32[i] != prev_buffer_u32[i] && !changed_region) {
+			regions++;
+			changed_region = true;
+		}
+
+		if (curr_buffer_u32[i] == prev_buffer_u32[i] && changed_region)
+			changed_region = false;
+	}
+
+	return regions;
+}
+
+void GetChangedRegions(u8* curr_buffer, u8* prev_buffer, u32 size, PartialCapture* captures)
+{
+	if (!curr_buffer || !prev_buffer || !captures)
+		return;
+
+	size /= sizeof(u32);
+	u32* curr_buffer_u32 = reinterpret_cast<u32*>(curr_buffer);
+	u32* prev_buffer_u32 = reinterpret_cast<u32*>(prev_buffer);
+
+	u32 regions = 0;
+	bool changed_region = false;
+	for (u32 i = 0; i < size; i++) {
+		if (curr_buffer_u32[i] != prev_buffer_u32[i] && !changed_region) {
+			PartialCapture* capture = &captures[regions];
+			capture->begin_index = i * 4;
+			//Avoid bugs if buffer ends
+			capture->end_index = i * 4;
+			changed_region = true;
+		}
+
+		if (curr_buffer_u32[i] == prev_buffer_u32[i] && changed_region) {
+			PartialCapture* capture = &captures[regions++];
+			capture->end_index = i * 4;
+			changed_region = false;
+		}
+	}
 }
 
 SOCKET ConnectToServer(const char* address, USHORT port)
@@ -361,6 +464,7 @@ void HostImplementation(SOCKET host_socket)
 			}
 
 			std::cout << "Connection found!!" << std::endl;
+			complete_capture_required = true;
 		} break;
 		case MESSAGE_INFO_CLIENT_DISCONNECTED: {
 			u32 client_id;
