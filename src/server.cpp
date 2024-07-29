@@ -254,8 +254,8 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 					SendMsg(other_socket, MESSAGE_ERROR_NONE);
 					Send(other_socket, host_room.id);
 					//To display the game in real time if it is enabled
-					Send(other_socket, host_room.info.host_window_width);
-					Send(other_socket, host_room.info.host_window_height);
+					//Send(other_socket, host_room.info.host_window_width);
+					//Send(other_socket, host_room.info.host_window_height);
 				}
 				else {
 					SendMsg(other_socket, MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD);
@@ -367,16 +367,17 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 			}
 			ASSERT(room_index != -1);
 
-			u32 buffer_size;
-			Receive(other_socket, &buffer_size);
 			//TODO this is temporary, should probably care more about the memory
-			std::vector<u8> buffer(buffer_size);
-			ReceiveBuffer(other_socket, buffer.data(), buffer_size);
+			u32 compressed_size;
+			Receive(other_socket, &compressed_size);
+			std::vector<u8> buffer(compressed_size);
+			ReceiveBuffer(other_socket, buffer.data(), buffer.size());
 			for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
 				auto& connected_socket = rooms[room_index].connected_sockets[i];
 				if (connected_socket.connected) {
 					SendMsg(connected_socket.sock, MESSAGE_REQUEST_SEND_COMPLETE_CAPTURE);
-					SendBuffer(connected_socket.sock, buffer.data(), buffer_size);
+					Send(connected_socket.sock, compressed_size);
+					SendBuffer(connected_socket.sock, buffer.data(), buffer.size());
 				}
 			}
 		}break;

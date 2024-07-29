@@ -1,6 +1,9 @@
 #include "client.hpp"
 #include "JoyShockLibrary.h"
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stbi_image.h>
+
 void QueryRooms(SOCKET client_socket)
 {
 	SendMsg(client_socket, MESSAGE_REQUEST_ROOM_QUERY);
@@ -138,11 +141,10 @@ void ClientImplementation(SOCKET client_socket)
 
 	GameWindowData window_data;
 	Receive(client_socket, &room_id);
-	Receive(client_socket, &window_data.src_width);
-	Receive(client_socket, &window_data.src_height);
+
 	//At the beginning, src and dest dimensions are the same
-	window_data.dst_width = window_data.src_width;
-	window_data.dst_height = window_data.src_height;
+	window_data.dst_width = send_buffer_width;
+	window_data.dst_height = send_buffer_height;
 
 	std::cout << "Connection was successful, {X to quit the room}!\n";
 
@@ -169,7 +171,13 @@ void ClientImplementation(SOCKET client_socket)
 			//std::scoped_lock lk{ window_data.buffer_mutex };
 			switch (msg) {
 			case MESSAGE_REQUEST_SEND_COMPLETE_CAPTURE: {
-				ReceiveBuffer(client_socket, window_data.buffer.data(), window_data.buffer.size());
+				Receive(client_socket, &window_data.compressed_buffer_size);
+				if (window_data.buffer.size() < window_data.compressed_buffer_size)
+					window_data.buffer.resize(window_data.compressed_buffer_size);
+
+				std::unique_lock lk{ window_data.buffer_mutex };
+				ReceiveBuffer(client_socket, window_data.buffer.data(), window_data.compressed_buffer_size);
+				lk.unlock();
 			}break;
 			case MESSAGE_REQUEST_SEND_PARTIAL_CAPTURE: {
 				u32 changed_regions;
@@ -188,9 +196,9 @@ void ClientImplementation(SOCKET client_socket)
 				}
 			}break;
 			case MESSAGE_INFO_CHANGED_CAPTURED_SCREEN_DIMENSIONS:
-				Receive(client_socket, &window_data.src_width);
-				Receive(client_socket, &window_data.src_height);
-				window_data.buffer.resize(window_data.src_width * window_data.src_height * 4);
+				//Receive(client_socket, &window_data.src_width);
+				//Receive(client_socket, &window_data.src_height);
+				//window_data.buffer.resize(window_data.src_width * window_data.src_height * 4);
 				break;
 			case MESSAGE_REQUEST_ROOM_QUIT:
 			case MESSAGE_ERROR_ROOM_NO_LONGER_EXISTS:
@@ -303,7 +311,7 @@ HWND InitGameWindowContext(GameWindowData* window_data)
 	if (!window_data) 
 		return nullptr;
 
-	window_data->buffer.resize(window_data->src_width * window_data->src_height * 4);
+	window_data->buffer.resize(send_buffer_width * send_buffer_height * 4);
 
 	HINSTANCE instance = GetModuleHandle(nullptr);
 	const wchar_t class_name[] = L"Game window";
@@ -319,7 +327,7 @@ HWND InitGameWindowContext(GameWindowData* window_data)
 
 	HWND game_window = CreateWindowEx(0, class_name, L"Game Window",
 		WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT,
-		window_data->src_width, window_data->src_height, 
+		send_buffer_width, send_buffer_height, 
 		nullptr, nullptr, instance, window_data);
 
 	if (!game_window) {
@@ -342,18 +350,30 @@ void FetchCaptureToGameWindow(HWND& hwnd, GameWindowData* window_data)
 	// Create a bitmap in memory
 	BITMAPINFO bmi = { 0 };
 	bmi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-	bmi.bmiHeader.biWidth = window_data->src_width;
-	bmi.bmiHeader.biHeight = -window_data->src_height; // Use negative height for top-down DIB
+	bmi.bmiHeader.biWidth = send_buffer_width;
+	bmi.bmiHeader.biHeight = -send_buffer_height; // Use negative height for top-down DIB
 	bmi.bmiHeader.biPlanes = 1;
 	bmi.bmiHeader.biBitCount = 32;
 	bmi.bmiHeader.biCompression = BI_RGB;
 
 	// Create a memory device context compatible with the window DC
 	HDC memDC = CreateCompatibleDC(hdc);
-	HBITMAP hBitmap = CreateCompatibleBitmap(hdc, window_data->src_width, window_data->src_height);
+	HBITMAP hBitmap = CreateCompatibleBitmap(hdc, send_buffer_width, send_buffer_height);
 	HGDIOBJ gdi_obj = SelectObject(memDC, hBitmap);
 
-	if (SetDIBits(hdc, hBitmap, 0, window_data->src_height, window_data->buffer.data(), &bmi, DIB_RGB_COLORS) == 0) {
+	//Uncompress the buffer first
+	s32 x, y, comp;
+	
+	std::unique_lock lk{ window_data->buffer_mutex };
+	u8* uncompressed_buf = stbi_load_from_memory(window_data->buffer.data(), window_data->compressed_buffer_size, &x, &y, &comp, 4);
+	lk.unlock();
+
+	if (!uncompressed_buf) {
+		std::cout << "Stuttering\n";
+		return;
+	}
+
+	if (SetDIBits(hdc, hBitmap, 0, send_buffer_height, uncompressed_buf, &bmi, DIB_RGB_COLORS) == 0) {
 		std::cout << "SetDIBits failed\n";
 	}
 
@@ -364,7 +384,7 @@ void FetchCaptureToGameWindow(HWND& hwnd, GameWindowData* window_data)
 
 	// Blit the bitmap to the window
 	if (StretchBlt(hdc, 0, 0, window_data->dst_width, window_data->dst_height, memDC, 0, 0,
-		window_data->src_width, window_data->src_height, SRCCOPY) == 0) {
+		send_buffer_width, send_buffer_height, SRCCOPY) == 0) {
 		std::cout << "StretchBlt failed\n";
 	}
 
@@ -373,6 +393,7 @@ void FetchCaptureToGameWindow(HWND& hwnd, GameWindowData* window_data)
 	}*/
 
 	// Clean up
+	stbi_image_free(uncompressed_buf);
 	DeleteDC(memDC);
 	DeleteObject(hBitmap);
 

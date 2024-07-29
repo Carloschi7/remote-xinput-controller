@@ -4,6 +4,10 @@
 #include <chrono>
 #include <atomic>
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#define __STDC_LIB_EXT1__
+#include <stbi_image_write.h>
+
 std::atomic<bool> complete_capture_required = true;
 
 void TestXboxPad()
@@ -114,118 +118,65 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::ato
 	}
 
 	HDC window_hdc = GetDC(window);
-
-	RECT window_rect;
-	GetWindowRect(window, &window_rect);
-	//Added a small padding that accounts for window padding
-	s32 width = window_rect.right - window_rect.left;
-	s32 height = window_rect.bottom - window_rect.top;
-
-	if (width < 0 || height < 0) {
-		std::cout << "Windows is not focused properly, please try again\n";
-		return;
-	}
-
 	HDC mem_hdc = CreateCompatibleDC(window_hdc);
+	HBITMAP bitmap = CreateCompatibleBitmap(window_hdc, send_buffer_width, send_buffer_height);
+	SelectObject(mem_hdc, bitmap);
 
-	bool use_first_buffer = true;
-	u8* first_buffer = new u8[width * height * 4];
-	u8* second_buffer = new u8[width * height * 4];
+	// Prepare the BITMAPINFOHEADER structure for GetDIBits
+	BITMAPINFOHEADER bitmap_header;
+	bitmap_header.biSize = sizeof(BITMAPINFOHEADER);
+	bitmap_header.biWidth = send_buffer_width;
+	bitmap_header.biHeight = -send_buffer_height;
+	bitmap_header.biPlanes = 1;
+	bitmap_header.biBitCount = 32;
+	bitmap_header.biCompression = BI_RGB;
+	bitmap_header.biSizeImage = 0;
+
+	SetStretchBltMode(mem_hdc, HALFTONE);
+	CompressionBuffer compressed_buf = {};
+	compressed_buf.buf_size = (send_buffer_width * send_buffer_height * 4) / 10;
+	compressed_buf.buf = new u8[compressed_buf.buf_size];
+	u8* uncompressed_buf = new u8[send_buffer_width * send_buffer_height * 4];
+
+	auto compression_func = [](void* context, void* data, int size) 
+	{
+		CompressionBuffer* raw_buf = (CompressionBuffer*)context;
+		if (raw_buf->cursor + size >= raw_buf->buf_size) {
+			u8* new_ptr = new u8[raw_buf->buf_size * 2];
+			std::memcpy(new_ptr, raw_buf->buf, raw_buf->buf_size);
+			delete[] raw_buf->buf;
+			raw_buf->buf = new_ptr;
+			raw_buf->buf_size *= 2;
+		}
+
+		std::memcpy(raw_buf->buf + raw_buf->cursor, data, size);
+		raw_buf->cursor += size;
+	};
+
+
 	while (run_loop) {
-		//Find out if the host resized the winwow
+
 		RECT window_rect;
 		GetWindowRect(window, &window_rect);
-		//Added a small padding that accounts for window padding
-		s32 current_width = window_rect.right - window_rect.left;
-		s32 current_height = window_rect.bottom - window_rect.top;
+		s32 width = window_rect.right - window_rect.left;
+		s32 height = window_rect.bottom - window_rect.top;
 
-		HBITMAP bitmap = CreateCompatibleBitmap(window_hdc, width, height);
-		SelectObject(mem_hdc, bitmap);
+		StretchBlt(mem_hdc, 0, 0, send_buffer_width, send_buffer_height, window_hdc, 0, 0, width, height, SRCCOPY);
+		s32 rows_parsed = GetDIBits(mem_hdc, bitmap, 0, send_buffer_height, uncompressed_buf, (BITMAPINFO*)&bitmap_header, DIB_RGB_COLORS);
+		ASSERT(rows_parsed == send_buffer_height);
 
-		BITMAPINFOHEADER bitmap_header = {};
-		bitmap_header.biSize = sizeof(BITMAPINFOHEADER);
-		bitmap_header.biWidth = width;
-		bitmap_header.biHeight = -height;
-		bitmap_header.biPlanes = 1;
-		bitmap_header.biBitCount = 32;
-		bitmap_header.biCompression = BI_RGB;
+		compressed_buf.cursor = 0;
+		SendMsg(server_socket, MESSAGE_REQUEST_SEND_COMPLETE_CAPTURE);
+		stbi_write_jpg_to_func(compression_func, &compressed_buf, send_buffer_width, send_buffer_height, 4, uncompressed_buf, 50);
+		Send(server_socket, compressed_buf.cursor);
+		SendBuffer(server_socket, compressed_buf.buf, compressed_buf.cursor);
 
-		if (current_width != width || current_height != height) {
-			SendMsg(server_socket, MESSAGE_INFO_CHANGED_CAPTURED_SCREEN_DIMENSIONS);
-			Send(server_socket, current_width);
-			Send(server_socket, current_height);
-			width = current_width;
-			height = current_height;
-
-			delete[] first_buffer;
-			delete[] second_buffer;
-			//TODO replace this with a preallocated array that is resized troughout the process
-			first_buffer = new u8[width * height * 4];
-			second_buffer = new u8[width * height * 4];
-		}
-		else {
-			if (!BitBlt(mem_hdc, 0, 0, width, height, window_hdc, 0, 0, SRCCOPY)) {
-				std::cout << "BitBlt failed\n";
-			}
-
-			u32 buffer_size = width * height * 4;
-			if (complete_capture_required) {
-
-				GetDIBits(window_hdc, bitmap, 0, height, first_buffer, (BITMAPINFO*)&bitmap_header, DIB_RGB_COLORS);
-
-				SendMsg(server_socket, MESSAGE_REQUEST_SEND_COMPLETE_CAPTURE);
-
-				Send(server_socket, buffer_size);
-				SendBuffer(server_socket, first_buffer, buffer_size);
-				complete_capture_required = false;
-				use_first_buffer = false;
-			}
-			else {
-
-				if (use_first_buffer) {
-					GetDIBits(window_hdc, bitmap, 0, height, first_buffer, (BITMAPINFO*)&bitmap_header, DIB_RGB_COLORS);
-
-					u32 changed_regions = GetChangedRegionsCount(first_buffer, second_buffer, buffer_size);
-					PartialCapture* captures = new PartialCapture[changed_regions];
-					GetChangedRegions(first_buffer, second_buffer, buffer_size, captures);
-					SendMsg(server_socket, MESSAGE_REQUEST_SEND_PARTIAL_CAPTURE);
-					Send(server_socket, changed_regions);
-					SendBuffer(server_socket, captures, changed_regions * sizeof(PartialCapture));
-					for (u32 i = 0; i < changed_regions; i++) {
-						PartialCapture& capture = captures[i];
-						SendBuffer(server_socket, first_buffer + capture.begin_index, capture.end_index - capture.begin_index);
-					}
-
-					delete[] captures;
-					use_first_buffer = false;
-				}
-				else {
-					GetDIBits(window_hdc, bitmap, 0, height, second_buffer, (BITMAPINFO*)&bitmap_header, DIB_RGB_COLORS);
-
-					u32 changed_regions = GetChangedRegionsCount(second_buffer, first_buffer, buffer_size);
-					PartialCapture* captures = new PartialCapture[changed_regions];
-					GetChangedRegions(second_buffer, first_buffer, buffer_size, captures);
-					SendMsg(server_socket, MESSAGE_REQUEST_SEND_PARTIAL_CAPTURE);
-					Send(server_socket, changed_regions);
-					SendBuffer(server_socket, captures, changed_regions * sizeof(PartialCapture));
-					for (u32 i = 0; i < changed_regions; i++) {
-						PartialCapture& capture = captures[i];
-						SendBuffer(server_socket, second_buffer + capture.begin_index, capture.end_index - capture.begin_index);
-					}
-
-					delete[] captures;
-					use_first_buffer = true;
-				}
-			}
-		}
-
-		//Trying to reach 60 fps in transmission
-		DeleteObject(bitmap);
 		Sleep(screen_send_interval_ms);
 	}
+	DeleteObject(bitmap);
 
-	delete[] first_buffer;
-	delete[] second_buffer;
+	delete[] uncompressed_buf;
+	delete[] compressed_buf.buf;
 }
 
 u32 GetChangedRegionsCount(u8* curr_buffer, u8* prev_buffer, u32 size)

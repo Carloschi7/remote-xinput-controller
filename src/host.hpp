@@ -18,6 +18,13 @@ struct WindowEnumeration
 	u32 windows_count;
 };
 
+struct CompressionBuffer
+{
+	u8* buf;
+	u32 buf_size;
+	u32 cursor;
+};
+
 void TestXboxPad();
 void TestDualshock();
 

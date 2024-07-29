@@ -2,6 +2,7 @@
 #define WIN32_LEAN_AND_MEAN
 //#define SERVER_IMPL
 
+
 #include <windows.h>
 #include <Xinput.h>
 #include <ViGEm/Client.h>
@@ -24,6 +25,8 @@
 
 constexpr u32 network_chunk_size = 4096;
 constexpr u32 screen_send_interval_ms = 1000 / 60;
+constexpr s32 send_buffer_width = 400;
+constexpr s32 send_buffer_height = 400;
 
 enum Message
 {

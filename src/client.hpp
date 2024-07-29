@@ -7,8 +7,7 @@ struct GameWindowData
 {
 	std::mutex buffer_mutex;
 	std::vector<u8> buffer;
-	s32 src_width;
-	s32 src_height;
+	u32 compressed_buffer_size;
 	s32 dst_width;
 	s32 dst_height;
 	WNDCLASS wnd_class;
