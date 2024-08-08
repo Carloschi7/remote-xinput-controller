@@ -2,7 +2,6 @@
 #define WIN32_LEAN_AND_MEAN
 //#define SERVER_IMPL
 
-
 #include <windows.h>
 #include <Xinput.h>
 #include <ViGEm/Client.h>
@@ -11,6 +10,7 @@
 #include <winsock2.h>
 
 #include <iostream>
+#include <format>
 #include <thread>
 #include <condition_variable>
 #include <type_traits>
@@ -46,7 +46,6 @@ enum Message
 	MESSAGE_INFO_CLIENT_JOINING_ROOM,
 	MESSAGE_INFO_PAD_ALLOCATED,
 	MESSAGE_INFO_CLIENT_DISCONNECTED,
-	MESSAGE_INFO_CHANGED_CAPTURED_SCREEN_DIMENSIONS,
 
 	MESSAGE_ERROR_NONE,
 	MESSAGE_ERROR_ROOM_AT_FULL_CAPACITY,
@@ -68,7 +67,7 @@ enum ThreadType
 	THREAD_TYPE_STOP,
 };
 
-struct PartialCapture
+struct ScreenCaptureInterval
 {
 	u32 begin_index;
 	u32 end_index;
@@ -111,12 +110,35 @@ struct Room
 	Message connecting_message;
 };
 
+namespace Log
+{
+	template <class... _Types>
+	using FormatString = std::_Basic_format_string<char, std::type_identity_t<_Types>...>;
+
+	//Formats and prints to the console
+	template <class... _Types>
+	static inline void Format(FormatString<_Types...> _Fmt, _Types&&... _Args)
+	{
+		std::cout << std::format(_Fmt, static_cast<_Types&&>(_Args)...);
+	}
+
+	namespace Debug
+	{
+		template <class... _Types>
+		static inline void Format(FormatString<_Types...> _Fmt, _Types&&... _Args)
+		{
+#ifdef DEBUG_BUILD
+			std::cout << std::format(_Fmt, static_cast<_Types&&>(_Args)...);
+#endif
+		}
+	}
+}
 
 static inline void SendMsg(SOCKET sock, Message msg)
 {
 	s32 error_msg = send(sock, reinterpret_cast<char*>(&msg), sizeof(Message), 0);
 	if (error_msg == SOCKET_ERROR) {
-		std::cout << "Error with Send func: " << WSAGetLastError() << "\n";
+		Log::Format("Error with Send func: {}\n", WSAGetLastError());
 	}
 }
 
@@ -125,7 +147,7 @@ static inline Message ReceiveMsg(SOCKET sock)
 	Message msg;
 	s32 error_msg = recv(sock, reinterpret_cast<char*>(&msg), sizeof(Message), 0);
 	if (error_msg == SOCKET_ERROR) {
-		std::cout << "Error with Receive func: " << WSAGetLastError() << "\n";
+		Log::Format("Error with Receive func: {}\n", WSAGetLastError());
 		return MESSAGE_EMPTY;
 	}
 
@@ -138,7 +160,7 @@ static inline bool Send(SOCKET sock, T& data)
 	static_assert(std::is_trivially_copyable_v<T>, "The type needs to be trivially copiable");
 	s32 error_msg = send(sock, reinterpret_cast<char*>(&data), sizeof(T), 0);
 	if (error_msg == SOCKET_ERROR) {
-		std::cout << "Error with Send func: " << WSAGetLastError() << "\n";
+		Log::Format("Error with Send func: {}\n", WSAGetLastError());
 		return false;
 	}
 
@@ -151,7 +173,7 @@ static inline bool Receive(SOCKET sock, T* data)
 	static_assert(std::is_trivially_copyable_v<T>, "The type needs to be trivially copiable");
 	s32 error_msg = recv(sock, reinterpret_cast<char*>(data), sizeof(T), 0);
 	if (error_msg == SOCKET_ERROR) {
-		std::cout << "Error with Receive func: " << WSAGetLastError() << "\n";
+		Log::Format("Error with Receive func: {}\n", WSAGetLastError());
 		return false;
 	}
 
@@ -167,7 +189,7 @@ static inline bool SendBuffer(SOCKET sock, void* data, u32 size)
 
 		u32 bytes_sent = send(sock, current_ptr, len, 0);
 		if (bytes_sent == SOCKET_ERROR) {
-			std::cout << "Error with ReceiveBuffer func: " << WSAGetLastError() << "\n";
+			Log::Format("Error with SendBuffer func: {}\n", WSAGetLastError());
 			return false;
 		}
 		total_bytes_sent += bytes_sent;
@@ -185,7 +207,7 @@ static inline bool ReceiveBuffer(SOCKET sock, void* data, u32 size)
 
 		u32 bytes_received = recv(sock, current_ptr, len, 0);
 		if (bytes_received == SOCKET_ERROR) {
-			std::cout << "Error with ReceiveBuffer func: " << WSAGetLastError() << "\n";
+			Log::Format("Error with ReceiveBuffer func: {}\n", WSAGetLastError());
 			return false;
 		}
 		total_bytes_received += bytes_received;

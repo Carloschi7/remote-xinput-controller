@@ -82,7 +82,7 @@ SOCKET SetupServerSocket(USHORT port)
 
 	s32 wsa_startup = WSAStartup(MAKEWORD(2, 2), &wsaData);
 	if (wsa_startup != 0) {
-		std::cout << "WSAStartup failed: " << wsa_startup;
+		Log::Format("WSAStartup failed: {}", wsa_startup);
 		return INVALID_SOCKET;
 	}
 
@@ -101,7 +101,7 @@ SOCKET SetupServerSocket(USHORT port)
 	}
 
 	if (listen(host_socket, SOMAXCONN) == SOCKET_ERROR) {
-		std::cout << "listen failed with error: " << WSAGetLastError() << '\n';
+		Log::Format("listen failed with error: {}\n", WSAGetLastError());
 		closesocket(host_socket);
 		WSACleanup();
 		return INVALID_SOCKET;
@@ -201,8 +201,6 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 
 			Room::Info new_room_info;
 			Receive(other_socket, &new_room_info);
-			Receive(other_socket, &new_room_info.host_window_width);
-			Receive(other_socket, &new_room_info.host_window_height);
 			Room& room = rooms.emplace_back();
 			room.id = server_data->id_generator++;
 			room.info = new_room_info;
@@ -395,8 +393,8 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 
 			Receive(other_socket, &changed_regions);
 			//TODO fix this, extremely slow
-			PartialCapture* captures = new PartialCapture[changed_regions];
-			ReceiveBuffer(other_socket, captures, changed_regions * sizeof(PartialCapture));
+			ScreenCaptureInterval* captures = new ScreenCaptureInterval[changed_regions];
+			ReceiveBuffer(other_socket, captures, changed_regions * sizeof(ScreenCaptureInterval));
 			u32 partial_buffer_size = 0;
 
 			for (u32 i = 0; i < changed_regions; i++)
@@ -405,7 +403,7 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 			std::vector<u8> buffer(partial_buffer_size);
 			u32 buffer_offset = 0;
 			for (u32 i = 0; i < changed_regions; i++) {
-				PartialCapture& capture = captures[i];
+				ScreenCaptureInterval& capture = captures[i];
 				ReceiveBuffer(other_socket, buffer.data() + buffer_offset, capture.end_index - capture.begin_index);
 				buffer_offset += capture.end_index - capture.begin_index;
 			}
@@ -415,7 +413,7 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 				if (connected_socket.connected) {
 					SendMsg(connected_socket.sock, MESSAGE_REQUEST_SEND_PARTIAL_CAPTURE);
 					Send(connected_socket.sock, changed_regions);
-					SendBuffer(connected_socket.sock, captures, changed_regions * sizeof(PartialCapture));
+					SendBuffer(connected_socket.sock, captures, changed_regions * sizeof(ScreenCaptureInterval));
 					SendBuffer(connected_socket.sock, buffer.data(), buffer.size());
 				}
 			}
@@ -423,30 +421,6 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 			delete[] captures;
 
 		}break;
-		case MESSAGE_INFO_CHANGED_CAPTURED_SCREEN_DIMENSIONS: {
-			if (!is_this_client_hosting)
-				break;
-
-			s32 room_index = -1;
-			for (u32 i = 0; i < rooms.size(); i++) {
-				if (rooms[i].host_socket == other_socket)
-					room_index = i;
-			}
-			ASSERT(room_index != -1);
-
-			s32 new_windows_width, new_windows_height;
-			Receive(other_socket, &new_windows_width);
-			Receive(other_socket, &new_windows_height);
-
-			for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
-				auto& connected_socket = rooms[room_index].connected_sockets[i];
-				if (connected_socket.connected) {
-					SendMsg(connected_socket.sock, MESSAGE_INFO_CHANGED_CAPTURED_SCREEN_DIMENSIONS);
-					Send(connected_socket.sock, new_windows_width);
-					Send(connected_socket.sock, new_windows_height);
-				}
-			}
-		}
 		case MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD:
 		case MESSAGE_INFO_PAD_ALLOCATED: {
 			if (is_this_client_hosting) {

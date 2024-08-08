@@ -16,55 +16,55 @@ int main()
 int main()
 {
 	char controller_test;
-	std::cout << "Welcome to:\n";
-	std::cout << "X    X X X    X XXXXX  X   X XXXXX       XXXX X     X X   X\n";
-	std::cout << " X  X  X XX   X X    X X   X   X         X    XX   XX X   X\n";
-	std::cout << "  XX   X X X  X XXXXX  X   X   X         XXX  X X X X X   X\n";
-	std::cout << "  XX   X X  X X X      X   X   X   XXXX  XXX  X  X  X X   X\n";
-	std::cout << " X  X  X X   XX X      X   X   X         X    X     X X   X\n";
-	std::cout << "X    X X X    X X       XXX    X         XXXX X     X  XXX \n";
-	std::cout << "\n";
-	std::cout << "Before the fun begins, you optionally can test if the program detects correctly your controller according to its type!\n";
+	Log::Format("Welcome to:\n");
+	Log::Format("X    X X X    X XXXXX  X   X XXXXX       XXXX X     X X   X\n");
+	Log::Format(" X  X  X XX   X X    X X   X   X         X    XX   XX X   X\n");
+	Log::Format("  XX   X X X  X XXXXX  X   X   X         XXX  X X X X X   X\n");
+	Log::Format("  XX   X X  X X X      X   X   X   XXXX  XXX  X  X  X X   X\n");
+	Log::Format(" X  X  X X   XX X      X   X   X         X    X     X X   X\n");
+	Log::Format("X    X X X    X X       XXX    X         XXXX X     X  XXX \n");
+	Log::Format("\n");
+	Log::Format("Before the fun begins, you optionally can test if the program detects correctly your controller according to its type!\n");
 	do {
-		std::cout << "Choose an action\n";
-		std::cout << "Find DualShock pads! (D), find Xbox pads (X), any other button to connect to the hosting server:\n";
+		Log::Format("Choose an action\n");
+		Log::Format("Find DualShock pads! (D), find Xbox pads (X), any other button to connect to the hosting server:\n");
 		std::cin >> controller_test;
 
 		if (controller_test == 'D') {
 			u32 num = QueryDualshockControllers(nullptr);
 			if (num == 0) {
-				std::cout << "No DualShock controller detected, check if the pad is detected by the system\n";
+				Log::Format("No DualShock controller detected, check if the pad is detected by the system\n");
 			}
 			else {
-				std::cout << num << " Dualshock controller(s) detected!\n";
+				Log::Format("{} Dualshock controller(s) detected!\n", num);
 			}
 		}
 
 		if (controller_test == 'X') {
 			u32 num = QueryXboxControllers(nullptr);
 			if (num == 0) {
-				std::cout << "No Xbox controller detected, check if the pad is detected by the system\n";
+				Log::Format("No Xbox controller detected, check if the pad is detected by the system\n");
 			}
 			else {
-				std::cout << num << " Xbox controller(s) detected!\n";
+				Log::Format("{} Xbox controller(s) detected!\n", num);
 			}
 		}
 	} while (controller_test == 'D' || controller_test == 'X');
 
 	char action;
 	std::string ip;
-	std::cout << "insert the server IP:\n";
+	Log::Format("insert the server IP:\n");
 	std::cin >> ip;
 
 	SOCKET local_socket = ConnectToServer(ip.c_str(), 20000);
 	if (local_socket == INVALID_SOCKET) {
-		std::cout << "Could not connect to that server\n";
+		Log::Format("Could not connect to that server\n");
 		return -1;
 	}
 
 	while (true) {
 		QueryRooms(local_socket);
-		std::cout << "Create a room (C), join a room (J), Query rooms again(Q) {Anything else to exit}\n";
+		Log::Format("Create a room (C), join a room (J), Query rooms again(Q) (Anything else to exit)\n");
 		std::cin >> action;
 
 		if (action == 'C')

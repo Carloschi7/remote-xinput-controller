@@ -8,8 +8,6 @@
 #define __STDC_LIB_EXT1__
 #include <stbi_image_write.h>
 
-std::atomic<bool> complete_capture_required = true;
-
 void TestXboxPad()
 {
 	PVIGEM_CLIENT client = vigem_alloc();
@@ -52,27 +50,6 @@ void TestDualshock()
 	}
 }
 
-void GetCapturedWindowDimensions(const char* process_name, u32* width, u32* height)
-{
-	if (!width || !height)
-		return;
-
-	HWND window = FindWindowA(nullptr, process_name);
-	if (!window) {
-		std::cout << "Failed to find the window process\n";
-		*width = 0;
-		*height = 0;
-		return;
-	}
-
-
-	RECT window_rect;
-	GetWindowRect(window, &window_rect);
-	//Added a small padding that accounts for window padding
-	*width = window_rect.right - window_rect.left;
-	*height = window_rect.bottom - window_rect.top;
-}
-
 static BOOL EnumerateWindowsCallback(HWND hwnd, LPARAM lparam) 
 {
 	char class_name[max_window_name_length] = {};
@@ -113,7 +90,7 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::ato
 {
 	HWND window = FindWindowA(nullptr, process_name);
 	if (!window) {
-		std::cout << "Failed to find the window process\n";
+		Log::Format("Failed to find the window process\n");
 		return;
 	}
 
@@ -173,6 +150,7 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::ato
 
 		Sleep(screen_send_interval_ms);
 	}
+	DeleteDC(mem_hdc);
 	DeleteObject(bitmap);
 
 	delete[] uncompressed_buf;
@@ -203,7 +181,7 @@ u32 GetChangedRegionsCount(u8* curr_buffer, u8* prev_buffer, u32 size)
 	return regions;
 }
 
-void GetChangedRegions(u8* curr_buffer, u8* prev_buffer, u32 size, PartialCapture* captures)
+void GetChangedRegions(u8* curr_buffer, u8* prev_buffer, u32 size, ScreenCaptureInterval* captures)
 {
 	if (!curr_buffer || !prev_buffer || !captures)
 		return;
@@ -216,7 +194,7 @@ void GetChangedRegions(u8* curr_buffer, u8* prev_buffer, u32 size, PartialCaptur
 	bool changed_region = false;
 	for (u32 i = 0; i < size; i++) {
 		if (curr_buffer_u32[i] != prev_buffer_u32[i] && !changed_region) {
-			PartialCapture* capture = &captures[regions];
+			ScreenCaptureInterval* capture = &captures[regions];
 			capture->begin_index = i * 4;
 			//Avoid bugs if buffer ends
 			capture->end_index = i * 4;
@@ -224,7 +202,7 @@ void GetChangedRegions(u8* curr_buffer, u8* prev_buffer, u32 size, PartialCaptur
 		}
 
 		if (curr_buffer_u32[i] == prev_buffer_u32[i] && changed_region) {
-			PartialCapture* capture = &captures[regions++];
+			ScreenCaptureInterval* capture = &captures[regions++];
 			capture->end_index = i * 4;
 			changed_region = false;
 		}
@@ -239,7 +217,7 @@ SOCKET ConnectToServer(const char* address, USHORT port)
 
 	s32 wsa_startup = WSAStartup(MAKEWORD(2, 2), &wsaData);
 	if (wsa_startup != 0) {
-		std::cout << "WSAStartup failed: " << wsa_startup;
+		Log::Format("WSAStartup failed: {}\n", wsa_startup);
 		return INVALID_SOCKET;
 	}
 
@@ -283,11 +261,11 @@ void HostImplementation(SOCKET host_socket)
 	u32 physical_pads = QueryDualshockControllers(nullptr) + QueryXboxControllers(nullptr);
 	u32 virtual_pads = 0;
 
-	std::cout << "Numbers of xbox pads to connect (" << XUSER_MAX_COUNT - physical_pads << " slots available)\n";
+	Log::Format("Numbers of xbox pads to connect ({} slots available)\n", XUSER_MAX_COUNT - physical_pads);
 	std::cin >> virtual_pads;
 
 	if (virtual_pads > XUSER_MAX_COUNT - physical_pads) {
-		std::cout << "Not enough space\n";
+		Log::Format("Not enough space\n");
 		return;
 	}
 
@@ -296,7 +274,7 @@ void HostImplementation(SOCKET host_socket)
 	room_info.max_pads = virtual_pads;
 	{
 		std::string room_name;
-		std::cout << "Insert room name:\n";
+		Log::Format("Insert room name:\n");
 		std::cin >> room_name;
 		if (room_name.size() >= sizeof(room_info.name)) {
 			std::memcpy(room_info.name, "unknown", sizeof("unknown"));
@@ -312,7 +290,7 @@ void HostImplementation(SOCKET host_socket)
 
 	if (!VIGEM_SUCCESS(connection))
 	{
-		std::cout << "To run the server u need to have vigem installed\n";
+		Log::Format("To run the server u need to have vigem installed\n");
 		VigemDeallocate(client, nullptr, 0);
 		return;
 	}
@@ -325,23 +303,16 @@ void HostImplementation(SOCKET host_socket)
 
 		EnumerateWindows(enumeration);
 		u32 window_choice;
-		
-		auto print_single_enumeration = [&](u32 offset) {
-			std::cout << offset << ": {";
-			for (u32 j = 0; j < max_window_name_length && 
-				enumeration->window_names[offset * max_window_name_length + j] != 0;
-				j++) {
-				std::cout << enumeration->window_names[offset * 128 + j];
+		{
+			char cur_window_name[max_window_name_length];
+			for (u32 i = 0; i < enumeration->windows_count; i++) {
+				std::memcpy(cur_window_name, &enumeration->window_names[i * max_window_name_length], max_window_name_length);
+				Log::Format("{}: {}\n", i, cur_window_name);
 			}
-			std::cout << "}\n";
-		};
-
-		for (u32 i = 0; i < enumeration->windows_count; i++) {
-			print_single_enumeration(i);
 		}
 
 		do {
-			std::cout << "Select a valid window to capture from:\n";
+			Log::Format("Select a valid window to capture from:\n");
 			std::cin >> window_choice;
 		} while (window_choice >= enumeration->windows_count);
 		std::memcpy(selected_window_name, &enumeration->window_names[window_choice * max_window_name_length], max_window_name_length);
@@ -353,13 +324,6 @@ void HostImplementation(SOCKET host_socket)
 
 	SendMsg(host_socket, MESSAGE_REQUEST_ROOM_CREATE);
 	Send(host_socket, room_info);
-	
-	{
-		u32 width, height;
-		GetCapturedWindowDimensions(selected_window_name, &width, &height);
-		Send(host_socket, width);
-		Send(host_socket, height);
-	}
 
 	std::atomic<char> quit_signal;
 	std::atomic<bool> run_loops = true;
@@ -369,7 +333,7 @@ void HostImplementation(SOCKET host_socket)
 			char ch; std::cin >> ch;
 			if (ch == 'X') { quit_signal = ch; break; }
 		} });
-	std::cout << "Room created {X to close it}\n";
+	Log::Format("Room created (X to close it)\n");
 
 	std::thread capture_thread;
 
@@ -380,7 +344,7 @@ void HostImplementation(SOCKET host_socket)
 		case MESSAGE_INFO_SERVER_PING: {
 			//Closing the room
 			if (quit_signal.load() == 'X') {
-				std::cout << "Closing room...\n";
+				Log::Format("Closing room...\n");
 				SendMsg(host_socket, MESSAGE_INFO_ROOM_CLOSING);
 				run_loops = false;
 			}
@@ -404,7 +368,7 @@ void HostImplementation(SOCKET host_socket)
 			const auto controller_connection = vigem_target_add(client, connection.pad_handle);
 
 			if (!VIGEM_SUCCESS(controller_connection)) {
-				std::cout << "ViGEm Bus connection failed with error code: " << std::hex << controller_connection;
+				Log::Format("ViGEm Bus connection failed with error code: {:x}\n", static_cast<u32>(controller_connection));
 				SendMsg(host_socket, MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD);
 			}
 			else {
@@ -414,13 +378,12 @@ void HostImplementation(SOCKET host_socket)
 					capture_thread = std::thread([&]() { SendCapturedWindow(host_socket, selected_window_name, run_loops); });
 			}
 
-			std::cout << "Connection found!!" << std::endl;
-			complete_capture_required = true;
+			Log::Format("Connection found!!\n");
 		} break;
 		case MESSAGE_INFO_CLIENT_DISCONNECTED: {
 			u32 client_id;
 			Receive(host_socket, &client_id);
-			std::cout << "Client " << client_id << " disconnected\n";
+			Log::Format("Client {} disconnected\n", client_id);
 			ASSERT(client_connections[client_id].connected);
 			client_connections[client_id].connected = false;
 			vigem_target_remove(client, client_connections[client_id].pad_handle);
@@ -431,8 +394,8 @@ void HostImplementation(SOCKET host_socket)
 			u32 error_code = Receive(host_socket, &signal);
 
 			vigem_target_x360_update(client, client_connections[signal.pad_number].pad_handle, *reinterpret_cast<XUSB_REPORT*>(&signal.pad_state));
-			std::cout << "Signal from pad " << signal.pad_number << "\n";
-			std::cout << signal.pad_state.wButtons << std::endl;
+			Log::Debug::Format("Signal from pad {}\n", signal.pad_number);
+			Log::Debug::Format("{}\n", signal.pad_state.wButtons);
 		}break;
 		}
 	}

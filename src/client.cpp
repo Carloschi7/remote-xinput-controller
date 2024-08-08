@@ -11,7 +11,7 @@ void QueryRooms(SOCKET client_socket)
 	u32 rooms_count;
 	Receive(client_socket, &rooms_count);
 
-	std::cout << "Available rooms          Room name          Users Connected          Max users\n";
+	Log::Format("Available rooms          Room name          Users Connected          Max users\n");
 	for (u32 i = 0; i < rooms_count; i++) {
 		Room::Info room_info;
 		Receive(client_socket, &room_info);
@@ -21,8 +21,7 @@ void QueryRooms(SOCKET client_socket)
 			name_padding.pop_back();
 		}
 
-		std::cout << "Room: #" << i << ":                " << room_info.name << name_padding.c_str() <<
-			room_info.current_pads << "                        " << room_info.max_pads << "\n";
+		Log::Format("Room: #{}:                {}{}{}                        {}\n", i, room_info.name, name_padding.c_str(), room_info.current_pads, room_info.max_pads);
 	}
 }
 
@@ -75,19 +74,19 @@ void ClientImplementation(SOCKET client_socket)
 		u32 xbox_controllers = QueryXboxControllers(xbox_slots);
 
 		if (dualshock_controllers == 0 && xbox_controllers == 0) {
-			std::cout << "No joypad found, please connect a joypad to the system to be able to use remote play\n";
+			Log::Format("No joypad found, please connect a joypad to the system to be able to use remote play\n");
 			JslDisconnectAndDisposeAll();
 			return;
 		}
 
-		std::cout << "Select a controller to use for the room:\n";
+		Log::Format("Select a controller to use for the room:\n");
 		for (u32 i = 0; i < dualshock_controllers; i++) {
-			std::cout << "#" << i << " -> PS4 pad: " << controller_handles[i] << "\n";
+			Log::Format("#{} -> PS4 pad: {}\n", i, controller_handles[i]);
 		}
 
 		for (u32 i = 0, c = 0; i < XUSER_MAX_COUNT; i++) {
 			if (xbox_slots[i]) {
-				std::cout << "#" << dualshock_controllers + c << " -> xbox pad connected to slot " << i << "\n";
+				Log::Format("#{}: ->xbox pad connected to slot {}\n", dualshock_controllers + c, i);
 				c++;
 			}
 		}
@@ -119,7 +118,7 @@ void ClientImplementation(SOCKET client_socket)
 	}
 
 	do {
-		std::cout << "Choose the room to connect to:" << std::endl;
+		Log::Format("Choose the room to connect to:\n");
 		std::cin >> chosen_room;
 
 
@@ -128,13 +127,13 @@ void ClientImplementation(SOCKET client_socket)
 		connection_status = ReceiveMsg(client_socket);
 
 		if (connection_status == MESSAGE_ERROR_INDEX_OUT_OF_BOUNDS) {
-			std::cout << "Please, insert a valid room ID\n";
+			Log::Format("Please, insert a valid room ID\n");
 		}
 		else if (connection_status == MESSAGE_ERROR_ROOM_AT_FULL_CAPACITY) {
-			std::cout << "Could not connect, the room is currently at full capacity\n";
+			Log::Format("Could not connect, the room is currently at full capacity\n");
 		}
 		else if (connection_status == MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD) {
-			std::cout << "The host had issues creating a virtual pad, please try later\n";
+			Log::Format("The host had issues creating a virtual pad, please try later\n");
 		}
 
 	} while (connection_status != MESSAGE_ERROR_NONE);
@@ -146,7 +145,7 @@ void ClientImplementation(SOCKET client_socket)
 	window_data.dst_width = send_buffer_width;
 	window_data.dst_height = send_buffer_height;
 
-	std::cout << "Connection was successful, {X to quit the room}!\n";
+	Log::Format("Connection was successful, (X to quit the room)!\n");
 
 	HWND game_window = InitGameWindowContext(&window_data);
 	SetTimer(game_window, 1, screen_send_interval_ms, nullptr);
@@ -163,8 +162,8 @@ void ClientImplementation(SOCKET client_socket)
 
 
 	recv_thread = std::thread([&]() {
-		u32 max_changed_regions = 10000;
-		PartialCapture* captures = new PartialCapture[max_changed_regions];
+		u32 max_changed_regions = 0;
+		ScreenCaptureInterval* captures = nullptr;
 		while (true) {
 			Message msg = ReceiveMsg(client_socket);
 
@@ -180,26 +179,22 @@ void ClientImplementation(SOCKET client_socket)
 				lk.unlock();
 			}break;
 			case MESSAGE_REQUEST_SEND_PARTIAL_CAPTURE: {
+				//CURRENTLY UNUSED
 				u32 changed_regions;
 				Receive(client_socket, &changed_regions);
 				if (changed_regions >= max_changed_regions) {
 					delete[] captures;
 					max_changed_regions = changed_regions;
-					captures = new PartialCapture[max_changed_regions];
+					captures = new ScreenCaptureInterval[max_changed_regions];
 				}
 
-				ReceiveBuffer(client_socket, captures, changed_regions * sizeof(PartialCapture));
+				ReceiveBuffer(client_socket, captures, changed_regions * sizeof(ScreenCaptureInterval));
 
 				for (u32 i = 0; i < changed_regions; i++) {
-					PartialCapture& capture = captures[i];
+					ScreenCaptureInterval& capture = captures[i];
 					ReceiveBuffer(client_socket, window_data.buffer.data() + capture.begin_index, capture.end_index - capture.begin_index);
 				}
 			}break;
-			case MESSAGE_INFO_CHANGED_CAPTURED_SCREEN_DIMENSIONS:
-				//Receive(client_socket, &window_data.src_width);
-				//Receive(client_socket, &window_data.src_height);
-				//window_data.buffer.resize(window_data.src_width * window_data.src_height * 4);
-				break;
 			case MESSAGE_REQUEST_ROOM_QUIT:
 			case MESSAGE_ERROR_ROOM_NO_LONGER_EXISTS:
 				terminate_signal = true;
@@ -254,7 +249,7 @@ void ClientImplementation(SOCKET client_socket)
 		}
 	
 		if (terminate_signal) {
-			std::cout << "Host closed the room or its no longer reachable, press anything to close\n";
+			Log::Format("Host closed the room or its no longer reachable, press anything to close\n");
 			break;
 		}
 
@@ -311,7 +306,8 @@ HWND InitGameWindowContext(GameWindowData* window_data)
 	if (!window_data) 
 		return nullptr;
 
-	window_data->buffer.resize(send_buffer_width * send_buffer_height * 4);
+	//Extimated compressed value
+	window_data->buffer.resize((send_buffer_width * send_buffer_height * 4) / 10);
 
 	HINSTANCE instance = GetModuleHandle(nullptr);
 	const wchar_t class_name[] = L"Game window";
@@ -331,7 +327,7 @@ HWND InitGameWindowContext(GameWindowData* window_data)
 		nullptr, nullptr, instance, window_data);
 
 	if (!game_window) {
-		std::cout << "Failed to create game window\n";
+		Log::Format("Failed to create game window\n");
 		u32 error = GetLastError();
 		return nullptr;
 	}
@@ -369,28 +365,21 @@ void FetchCaptureToGameWindow(HWND& hwnd, GameWindowData* window_data)
 	lk.unlock();
 
 	if (!uncompressed_buf) {
-		std::cout << "Stuttering\n";
+		Log::Format("Stuttering\n");
 		return;
 	}
 
 	if (SetDIBits(hdc, hBitmap, 0, send_buffer_height, uncompressed_buf, &bmi, DIB_RGB_COLORS) == 0) {
-		std::cout << "SetDIBits failed\n";
+		Log::Format("SetDIBits failed\n");
 	}
 
-	//if (StretchDIBits(hdc, 0, 0, window_data->original_width, window_data->original_height,
-	//	0, 0, window_data->width, window_data->height, window_data->buffer.data(), &bmi, DIB_RGB_COLORS, SRCCOPY) == 0) {
-	//	std::cout << "SetDIBits failed\n";
-	//}
 
 	// Blit the bitmap to the window
 	if (StretchBlt(hdc, 0, 0, window_data->dst_width, window_data->dst_height, memDC, 0, 0,
 		send_buffer_width, send_buffer_height, SRCCOPY) == 0) {
-		std::cout << "StretchBlt failed\n";
+		Log::Format("StretchBlt failed\n");
 	}
 
-	/*if (BitBlt(hdc, 0, 0, window_data->width, window_data->height, memDC, 0, 0, SRCCOPY) == 0) {
-		std::cout << "BitBlt failed\n";
-	}*/
 
 	// Clean up
 	stbi_image_free(uncompressed_buf);
