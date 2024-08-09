@@ -25,8 +25,8 @@
 
 constexpr u32 network_chunk_size = 4096;
 constexpr u32 screen_send_interval_ms = 1000 / 60;
-constexpr s32 send_buffer_width = 400;
-constexpr s32 send_buffer_height = 400;
+constexpr s32 send_buffer_width = 500;
+constexpr s32 send_buffer_height = 500;
 
 enum Message
 {
@@ -67,12 +67,6 @@ enum ThreadType
 	THREAD_TYPE_STOP,
 };
 
-struct ScreenCaptureInterval
-{
-	u32 begin_index;
-	u32 end_index;
-};
-
 struct PadSignal
 {
 	u32 pad_number;
@@ -85,14 +79,14 @@ struct Room
 	u64 id;
 	SOCKET host_socket = 0;
 
-	struct 
+	struct
 	{
 		SOCKET sock;
 		bool connected;
 	} connected_sockets[4] = {};
 
 	//Edited by the host
-	struct Info 
+	struct Info
 	{
 		char name[16];
 		u16 max_pads;
@@ -142,7 +136,7 @@ static inline void SendMsg(SOCKET sock, Message msg)
 	}
 }
 
-static inline Message ReceiveMsg(SOCKET sock) 
+static inline Message ReceiveMsg(SOCKET sock)
 {
 	Message msg;
 	s32 error_msg = recv(sock, reinterpret_cast<char*>(&msg), sizeof(Message), 0);

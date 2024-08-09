@@ -8,6 +8,8 @@
 #define __STDC_LIB_EXT1__
 #include <stbi_image_write.h>
 
+std::atomic<bool> full_capture_needed = true;
+
 void TestXboxPad()
 {
 	PVIGEM_CLIENT client = vigem_alloc();
@@ -109,10 +111,14 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::ato
 	bitmap_header.biCompression = BI_RGB;
 	bitmap_header.biSizeImage = 0;
 
-	SetStretchBltMode(mem_hdc, HALFTONE);
-	CompressionBuffer compressed_buf = {};
+	//SetStretchBltMode(mem_hdc, HALFTONE);
+	CompressionBuffer compressed_buf = {}, prev_compressed_buf = {};
+
 	compressed_buf.buf_size = (send_buffer_width * send_buffer_height * 4) / 10;
+	prev_compressed_buf.buf_size = compressed_buf.buf_size;
+
 	compressed_buf.buf = new u8[compressed_buf.buf_size];
+	prev_compressed_buf.buf = new u8[prev_compressed_buf.buf_size];
 	u8* uncompressed_buf = new u8[send_buffer_width * send_buffer_height * 4];
 
 	auto compression_func = [](void* context, void* data, int size) 
@@ -130,7 +136,7 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::ato
 		raw_buf->cursor += size;
 	};
 
-
+	SetStretchBltMode(mem_hdc, HALFTONE);
 	while (run_loop) {
 
 		RECT window_rect;
@@ -138,75 +144,60 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::ato
 		s32 width = window_rect.right - window_rect.left;
 		s32 height = window_rect.bottom - window_rect.top;
 
+
 		StretchBlt(mem_hdc, 0, 0, send_buffer_width, send_buffer_height, window_hdc, 0, 0, width, height, SRCCOPY);
 		s32 rows_parsed = GetDIBits(mem_hdc, bitmap, 0, send_buffer_height, uncompressed_buf, (BITMAPINFO*)&bitmap_header, DIB_RGB_COLORS);
 		ASSERT(rows_parsed == send_buffer_height);
 
 		compressed_buf.cursor = 0;
-		SendMsg(server_socket, MESSAGE_REQUEST_SEND_COMPLETE_CAPTURE);
 		stbi_write_jpg_to_func(compression_func, &compressed_buf, send_buffer_width, send_buffer_height, 4, uncompressed_buf, 50);
-		Send(server_socket, compressed_buf.cursor);
-		SendBuffer(server_socket, compressed_buf.buf, compressed_buf.cursor);
+		if (full_capture_needed) {
+			SendMsg(server_socket, MESSAGE_REQUEST_SEND_COMPLETE_CAPTURE);
+			Send(server_socket, compressed_buf.cursor);
+			SendBuffer(server_socket, compressed_buf.buf, compressed_buf.cursor);
+
+			prev_compressed_buf.cursor = compressed_buf.cursor;
+			//TODO std::swap prob better and faster
+			std::swap(prev_compressed_buf.buf, compressed_buf.buf);
+			full_capture_needed = false;
+		}
+		else {
+			u32 curr_buf_size = compressed_buf.cursor;
+			u32 diff_point = GetChangedRegionBegin(compressed_buf.buf, prev_compressed_buf.buf, curr_buf_size);
+			if (curr_buf_size != prev_compressed_buf.cursor || diff_point != UINT32_MAX) {
+				SendMsg(server_socket, MESSAGE_REQUEST_SEND_PARTIAL_CAPTURE);
+				Send(server_socket, diff_point);
+				Send(server_socket, curr_buf_size);
+				SendBuffer(server_socket, compressed_buf.buf + diff_point, curr_buf_size - diff_point);
+
+				prev_compressed_buf.cursor = curr_buf_size;
+				std::swap(prev_compressed_buf.buf, compressed_buf.buf);
+			}
+		}
 
 		Sleep(screen_send_interval_ms);
 	}
 	DeleteDC(mem_hdc);
 	DeleteObject(bitmap);
 
+
 	delete[] uncompressed_buf;
+	delete[] prev_compressed_buf.buf;
 	delete[] compressed_buf.buf;
 }
 
-u32 GetChangedRegionsCount(u8* curr_buffer, u8* prev_buffer, u32 size)
+u32 GetChangedRegionBegin(u8* curr_buffer, u8* prev_buffer, u32 size)
 {
 	if (!curr_buffer || !prev_buffer)
 		return 0;
 
-	size /= sizeof(u32);
-	u32* curr_buffer_u32 = reinterpret_cast<u32*>(curr_buffer);
-	u32* prev_buffer_u32 = reinterpret_cast<u32*>(prev_buffer);
-
-	u32 regions = 0;
-	bool changed_region = false;
 	for (u32 i = 0; i < size; i++) {
-		if (curr_buffer_u32[i] != prev_buffer_u32[i] && !changed_region) {
-			regions++;
-			changed_region = true;
+		if (curr_buffer[i] != prev_buffer[i]) {
+			return i;
 		}
-
-		if (curr_buffer_u32[i] == prev_buffer_u32[i] && changed_region)
-			changed_region = false;
 	}
 
-	return regions;
-}
-
-void GetChangedRegions(u8* curr_buffer, u8* prev_buffer, u32 size, ScreenCaptureInterval* captures)
-{
-	if (!curr_buffer || !prev_buffer || !captures)
-		return;
-
-	size /= sizeof(u32);
-	u32* curr_buffer_u32 = reinterpret_cast<u32*>(curr_buffer);
-	u32* prev_buffer_u32 = reinterpret_cast<u32*>(prev_buffer);
-
-	u32 regions = 0;
-	bool changed_region = false;
-	for (u32 i = 0; i < size; i++) {
-		if (curr_buffer_u32[i] != prev_buffer_u32[i] && !changed_region) {
-			ScreenCaptureInterval* capture = &captures[regions];
-			capture->begin_index = i * 4;
-			//Avoid bugs if buffer ends
-			capture->end_index = i * 4;
-			changed_region = true;
-		}
-
-		if (curr_buffer_u32[i] == prev_buffer_u32[i] && changed_region) {
-			ScreenCaptureInterval* capture = &captures[regions++];
-			capture->end_index = i * 4;
-			changed_region = false;
-		}
-	}
+	return UINT32_MAX;
 }
 
 SOCKET ConnectToServer(const char* address, USHORT port)
@@ -379,6 +370,7 @@ void HostImplementation(SOCKET host_socket)
 			}
 
 			Log::Format("Connection found!!\n");
+			full_capture_needed = true;
 		} break;
 		case MESSAGE_INFO_CLIENT_DISCONNECTED: {
 			u32 client_id;

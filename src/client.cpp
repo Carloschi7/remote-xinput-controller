@@ -162,47 +162,42 @@ void ClientImplementation(SOCKET client_socket)
 
 
 	recv_thread = std::thread([&]() {
-		u32 max_changed_regions = 0;
-		ScreenCaptureInterval* captures = nullptr;
 		while (true) {
 			Message msg = ReceiveMsg(client_socket);
 
 			//std::scoped_lock lk{ window_data.buffer_mutex };
 			switch (msg) {
 			case MESSAGE_REQUEST_SEND_COMPLETE_CAPTURE: {
+				std::unique_lock lk{ window_data.buffer_mutex };
 				Receive(client_socket, &window_data.compressed_buffer_size);
 				if (window_data.buffer.size() < window_data.compressed_buffer_size)
 					window_data.buffer.resize(window_data.compressed_buffer_size);
 
-				std::unique_lock lk{ window_data.buffer_mutex };
 				ReceiveBuffer(client_socket, window_data.buffer.data(), window_data.compressed_buffer_size);
 				lk.unlock();
 			}break;
 			case MESSAGE_REQUEST_SEND_PARTIAL_CAPTURE: {
-				//CURRENTLY UNUSED
-				u32 changed_regions;
-				Receive(client_socket, &changed_regions);
-				if (changed_regions >= max_changed_regions) {
-					delete[] captures;
-					max_changed_regions = changed_regions;
-					captures = new ScreenCaptureInterval[max_changed_regions];
-				}
+				u32 diff_point, new_compressed_buffer_size;
+				Receive(client_socket, &diff_point);
+				Receive(client_socket, &new_compressed_buffer_size);
 
-				ReceiveBuffer(client_socket, captures, changed_regions * sizeof(ScreenCaptureInterval));
+				std::unique_lock lk{ window_data.buffer_mutex };
 
-				for (u32 i = 0; i < changed_regions; i++) {
-					ScreenCaptureInterval& capture = captures[i];
-					ReceiveBuffer(client_socket, window_data.buffer.data() + capture.begin_index, capture.end_index - capture.begin_index);
-				}
+				if(window_data.compressed_buffer_size != new_compressed_buffer_size)
+					window_data.compressed_buffer_size = new_compressed_buffer_size;
+
+				if (window_data.buffer.size() < window_data.compressed_buffer_size)
+					window_data.buffer.resize(window_data.compressed_buffer_size);
+				
+				ReceiveBuffer(client_socket, window_data.buffer.data() + diff_point, new_compressed_buffer_size - diff_point);
+				lk.unlock();
 			}break;
 			case MESSAGE_REQUEST_ROOM_QUIT:
 			case MESSAGE_ERROR_ROOM_NO_LONGER_EXISTS:
 				terminate_signal = true;
-				delete[] captures;
 				return;
 			}
 		}
-		delete[] captures;
 	});
 
 	XINPUT_STATE prev_pad_state = {};

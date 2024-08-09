@@ -389,36 +389,22 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 					room_index = i;
 			}
 			ASSERT(room_index != -1);
-			u32 changed_regions;
+			u32 diff_point, new_compressed_buffer_size;
 
-			Receive(other_socket, &changed_regions);
-			//TODO fix this, extremely slow
-			ScreenCaptureInterval* captures = new ScreenCaptureInterval[changed_regions];
-			ReceiveBuffer(other_socket, captures, changed_regions * sizeof(ScreenCaptureInterval));
-			u32 partial_buffer_size = 0;
-
-			for (u32 i = 0; i < changed_regions; i++)
-				partial_buffer_size += captures[i].end_index - captures[i].begin_index;
-
-			std::vector<u8> buffer(partial_buffer_size);
-			u32 buffer_offset = 0;
-			for (u32 i = 0; i < changed_regions; i++) {
-				ScreenCaptureInterval& capture = captures[i];
-				ReceiveBuffer(other_socket, buffer.data() + buffer_offset, capture.end_index - capture.begin_index);
-				buffer_offset += capture.end_index - capture.begin_index;
-			}
+			Receive(other_socket, &diff_point);
+			Receive(other_socket, &new_compressed_buffer_size);
+			std::vector<u8> buffer(new_compressed_buffer_size - diff_point);
+			ReceiveBuffer(other_socket, buffer.data(), new_compressed_buffer_size - diff_point);
 
 			for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
 				auto& connected_socket = rooms[room_index].connected_sockets[i];
 				if (connected_socket.connected) {
 					SendMsg(connected_socket.sock, MESSAGE_REQUEST_SEND_PARTIAL_CAPTURE);
-					Send(connected_socket.sock, changed_regions);
-					SendBuffer(connected_socket.sock, captures, changed_regions * sizeof(ScreenCaptureInterval));
-					SendBuffer(connected_socket.sock, buffer.data(), buffer.size());
+					Send(connected_socket.sock, diff_point);
+					Send(connected_socket.sock, new_compressed_buffer_size);
+					SendBuffer(connected_socket.sock, buffer.data(), new_compressed_buffer_size - diff_point);
 				}
 			}
-
-			delete[] captures;
 
 		}break;
 		case MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD:
