@@ -31,7 +31,7 @@ int main()
 		std::cin >> controller_test;
 
 		if (controller_test == 'D') {
-			u32 num = QueryDualshockControllers(nullptr);
+			u32 num = QueryDualshockCount();
 			if (num == 0) {
 				Log::Format("No DualShock controller detected, check if the pad is detected by the system\n");
 			}
@@ -41,7 +41,7 @@ int main()
 		}
 
 		if (controller_test == 'X') {
-			u32 num = QueryXboxControllers(nullptr);
+			u32 num = QueryXboxCount();
 			if (num == 0) {
 				Log::Format("No Xbox controller detected, check if the pad is detected by the system\n");
 			}

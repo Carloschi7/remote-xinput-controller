@@ -1,5 +1,6 @@
 #include "client.hpp"
 #include "JoyShockLibrary.h"
+#include "mem.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stbi_image.h>
@@ -25,12 +26,40 @@ void QueryRooms(SOCKET client_socket)
 	}
 }
 
-u32 QueryDualshockControllers(s32** controller_handles)
+u32 QueryDualshockCount()
 {
 	s32 dualshock_controllers = JslConnectDevices();
+	if (dualshock_controllers > XUSER_MAX_COUNT) {
+		//Max 4 controllers supported
+		dualshock_controllers = XUSER_MAX_COUNT;
+	}
+
+	return dualshock_controllers;
+}
+
+u32 QueryXboxCount()
+{
+	u32 xbox_controllers = 0;
+	for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
+		XINPUT_STATE unused = {};
+		s32 pad_read_result = XInputGetState(i, &unused);
+		if (pad_read_result == ERROR_SUCCESS)
+			xbox_controllers++;
+	}
+
+	return xbox_controllers;
+}
+
+u32 QueryDualshockControllers(Core::FixedBuffer& fixed_buffer, s32** controller_handles)
+{
+	s32 dualshock_controllers = JslConnectDevices();
+	if (dualshock_controllers > XUSER_MAX_COUNT) {
+		//Max 4 controllers supported
+		dualshock_controllers = XUSER_MAX_COUNT;
+	}
 
 	if (controller_handles && dualshock_controllers != 0) {
-		*controller_handles = new s32[dualshock_controllers];
+		*controller_handles = static_cast<s32*>(fixed_buffer.GetClientSection(CLIENT_ALLOCATIONS_DUALSHOCK_QUERY));
 		JslGetConnectedDeviceHandles(*controller_handles, dualshock_controllers);
 	}
 
@@ -66,10 +95,12 @@ void ClientImplementation(SOCKET client_socket)
 	ControllerType controller_type;
 	u32 controller_id;
 
+	Core::FixedBuffer fixed_buffer(FIXED_BUFFER_TYPE_CLIENT);
+	
 	//Check for controllers controllers
 	{
 		s32* controller_handles = nullptr;
-		u32 dualshock_controllers = QueryDualshockControllers(&controller_handles);
+		u32 dualshock_controllers = QueryDualshockControllers(fixed_buffer, &controller_handles);
 		bool xbox_slots[4] = {};
 		u32 xbox_controllers = QueryXboxControllers(xbox_slots);
 
@@ -112,9 +143,6 @@ void ClientImplementation(SOCKET client_socket)
 		else {
 			controller_id = controller_handles[sel];
 		}
-
-		if (controller_handles)
-			delete[] controller_handles;
 	}
 
 	do {
@@ -147,7 +175,7 @@ void ClientImplementation(SOCKET client_socket)
 
 	Log::Format("Connection was successful, (X to quit the room)!\n");
 
-	HWND game_window = InitGameWindowContext(&window_data);
+	HWND game_window = InitGameWindowContext(fixed_buffer, &window_data);
 	SetTimer(game_window, 1, screen_send_interval_ms, nullptr);
 
 	std::atomic<char> quit_signal = 0;
@@ -164,16 +192,15 @@ void ClientImplementation(SOCKET client_socket)
 	recv_thread = std::thread([&]() {
 		while (true) {
 			Message msg = ReceiveMsg(client_socket);
+			u32 max_compressed_buf_size = g_client_allocations_offsets[CLIENT_ALLOCATIONS_COMPRESSED_SCREEN_BUFFER];
 
-			//std::scoped_lock lk{ window_data.buffer_mutex };
 			switch (msg) {
 			case MESSAGE_REQUEST_SEND_COMPLETE_CAPTURE: {
 				std::unique_lock lk{ window_data.buffer_mutex };
 				Receive(client_socket, &window_data.compressed_buffer_size);
-				if (window_data.buffer.size() < window_data.compressed_buffer_size)
-					window_data.buffer.resize(window_data.compressed_buffer_size);
+				ASSERT(window_data.compressed_buffer_size <= max_compressed_buf_size);
 
-				ReceiveBuffer(client_socket, window_data.buffer.data(), window_data.compressed_buffer_size);
+				ReceiveBuffer(client_socket, window_data.buffer, window_data.compressed_buffer_size);
 				lk.unlock();
 			}break;
 			case MESSAGE_REQUEST_SEND_PARTIAL_CAPTURE: {
@@ -186,10 +213,8 @@ void ClientImplementation(SOCKET client_socket)
 				if(window_data.compressed_buffer_size != new_compressed_buffer_size)
 					window_data.compressed_buffer_size = new_compressed_buffer_size;
 
-				if (window_data.buffer.size() < window_data.compressed_buffer_size)
-					window_data.buffer.resize(window_data.compressed_buffer_size);
-				
-				ReceiveBuffer(client_socket, window_data.buffer.data() + diff_point, new_compressed_buffer_size - diff_point);
+				ASSERT(window_data.compressed_buffer_size <= max_compressed_buf_size);
+				ReceiveBuffer(client_socket, window_data.buffer + diff_point, new_compressed_buffer_size - diff_point);
 				lk.unlock();
 			}break;
 			case MESSAGE_REQUEST_ROOM_QUIT:
@@ -296,13 +321,13 @@ LRESULT CALLBACK GameWindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lPar
 	return DefWindowProc(hwnd, uMsg, wParam, lParam);
 }
 
-HWND InitGameWindowContext(GameWindowData* window_data)
+HWND InitGameWindowContext(Core::FixedBuffer& fixed_buffer, GameWindowData* window_data)
 {
 	if (!window_data) 
 		return nullptr;
 
 	//Extimated compressed value
-	window_data->buffer.resize((send_buffer_width * send_buffer_height * 4) / 10);
+	window_data->buffer = static_cast<u8*>(fixed_buffer.GetClientSection(CLIENT_ALLOCATIONS_COMPRESSED_SCREEN_BUFFER));
 
 	HINSTANCE instance = GetModuleHandle(nullptr);
 	const wchar_t class_name[] = L"Game window";
@@ -356,7 +381,7 @@ void FetchCaptureToGameWindow(HWND& hwnd, GameWindowData* window_data)
 	s32 x, y, comp;
 	
 	std::unique_lock lk{ window_data->buffer_mutex };
-	u8* uncompressed_buf = stbi_load_from_memory(window_data->buffer.data(), window_data->compressed_buffer_size, &x, &y, &comp, 4);
+	u8* uncompressed_buf = stbi_load_from_memory(window_data->buffer, window_data->compressed_buffer_size, &x, &y, &comp, 4);
 	lk.unlock();
 
 	if (!uncompressed_buf) {

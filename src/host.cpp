@@ -1,5 +1,6 @@
 #include "host.hpp"
 #include "client.hpp"
+#include "mem.hpp"
 #include <string>
 #include <chrono>
 #include <atomic>
@@ -88,7 +89,7 @@ void EnumerateWindows(WindowEnumeration* enumerations)
 	EnumWindows(EnumerateWindowsCallback, std::bit_cast<LPARAM>(enumerations));
 }
 
-void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::atomic<bool>& run_loop)
+void SendCapturedWindow(SOCKET server_socket, const char* process_name, Core::FixedBuffer& fixed_buffer, std::atomic<bool>& run_loop)
 {
 	HWND window = FindWindowA(nullptr, process_name);
 	if (!window) {
@@ -111,27 +112,19 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::ato
 	bitmap_header.biCompression = BI_RGB;
 	bitmap_header.biSizeImage = 0;
 
-	//SetStretchBltMode(mem_hdc, HALFTONE);
 	CompressionBuffer compressed_buf = {}, prev_compressed_buf = {};
 
 	compressed_buf.buf_size = (send_buffer_width * send_buffer_height * 4) / 10;
 	prev_compressed_buf.buf_size = compressed_buf.buf_size;
 
-	compressed_buf.buf = new u8[compressed_buf.buf_size];
-	prev_compressed_buf.buf = new u8[prev_compressed_buf.buf_size];
-	u8* uncompressed_buf = new u8[send_buffer_width * send_buffer_height * 4];
+	compressed_buf.buf = static_cast<u8*>(fixed_buffer.GetHostSection(HOST_ALLOCATIONS_COMPRESSED_BUF));
+	prev_compressed_buf.buf = static_cast<u8*>(fixed_buffer.GetHostSection(HOST_ALLOCATIONS_PREV_COMPRESSED_BUF));
+	u8* uncompressed_buf = static_cast<u8*>(fixed_buffer.GetHostSection(HOST_ALLOCATIONS_UNCOMPRESSED_BUF));
 
 	auto compression_func = [](void* context, void* data, int size) 
 	{
 		CompressionBuffer* raw_buf = (CompressionBuffer*)context;
-		if (raw_buf->cursor + size >= raw_buf->buf_size) {
-			u8* new_ptr = new u8[raw_buf->buf_size * 2];
-			std::memcpy(new_ptr, raw_buf->buf, raw_buf->buf_size);
-			delete[] raw_buf->buf;
-			raw_buf->buf = new_ptr;
-			raw_buf->buf_size *= 2;
-		}
-
+		ASSERT(raw_buf->cursor + size < raw_buf->buf_size);
 		std::memcpy(raw_buf->buf + raw_buf->cursor, data, size);
 		raw_buf->cursor += size;
 	};
@@ -144,7 +137,7 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::ato
 		s32 width = window_rect.right - window_rect.left;
 		s32 height = window_rect.bottom - window_rect.top;
 
-
+		//TODO: figure out how to get a more consistent buffer
 		StretchBlt(mem_hdc, 0, 0, send_buffer_width, send_buffer_height, window_hdc, 0, 0, width, height, SRCCOPY);
 		s32 rows_parsed = GetDIBits(mem_hdc, bitmap, 0, send_buffer_height, uncompressed_buf, (BITMAPINFO*)&bitmap_header, DIB_RGB_COLORS);
 		ASSERT(rows_parsed == send_buffer_height);
@@ -179,11 +172,6 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, std::ato
 	}
 	DeleteDC(mem_hdc);
 	DeleteObject(bitmap);
-
-
-	delete[] uncompressed_buf;
-	delete[] prev_compressed_buf.buf;
-	delete[] compressed_buf.buf;
 }
 
 u32 GetChangedRegionBegin(u8* curr_buffer, u8* prev_buffer, u32 size)
@@ -238,8 +226,6 @@ void VigemDeallocate(PVIGEM_CLIENT client, ConnectionInfo* client_connections, u
 			vigem_target_remove(client, client_connections[i].pad_handle);
 			vigem_target_free(client_connections[i].pad_handle);
 		}
-
-		delete[] client_connections;
 	}
 	vigem_disconnect(client);
 	vigem_free(client);
@@ -249,7 +235,9 @@ void VigemDeallocate(PVIGEM_CLIENT client, ConnectionInfo* client_connections, u
 
 void HostImplementation(SOCKET host_socket)
 {
-	u32 physical_pads = QueryDualshockControllers(nullptr) + QueryXboxControllers(nullptr);
+	Core::FixedBuffer fixed_buffer(FIXED_BUFFER_TYPE_HOST);
+	fixed_buffer.ResetMemory();
+	u32 physical_pads = QueryDualshockCount() + QueryXboxCount();
 	u32 virtual_pads = 0;
 
 	Log::Format("Numbers of xbox pads to connect ({} slots available)\n", XUSER_MAX_COUNT - physical_pads);
@@ -288,9 +276,9 @@ void HostImplementation(SOCKET host_socket)
 
 	char selected_window_name[max_window_name_length] = {};
 	{
-		WindowEnumeration* enumeration = new WindowEnumeration;
+		auto enumeration = static_cast<WindowEnumeration*>(fixed_buffer.GetHostSection(HOST_ALLOCATIONS_WINDOW_ENUM));
 		ASSERT(enumeration);
-		ZeroMemory(enumeration, sizeof(WindowEnumeration));
+		//ZeroMemory(enumeration, sizeof(WindowEnumeration));
 
 		EnumerateWindows(enumeration);
 		u32 window_choice;
@@ -307,12 +295,10 @@ void HostImplementation(SOCKET host_socket)
 			std::cin >> window_choice;
 		} while (window_choice >= enumeration->windows_count);
 		std::memcpy(selected_window_name, &enumeration->window_names[window_choice * max_window_name_length], max_window_name_length);
-
-		delete enumeration;
 	}
 
-	ConnectionInfo* client_connections = new ConnectionInfo[virtual_pads];
-
+	auto client_connections = static_cast<ConnectionInfo*>(fixed_buffer.GetHostSection(HOST_ALLOCATIONS_CLIENT_CONNECTIONS));
+	//ZeroMemory(client_connections, g_host_allocations_offsets[HOST_ALLOCATIONS_CLIENT_CONNECTIONS]);
 	SendMsg(host_socket, MESSAGE_REQUEST_ROOM_CREATE);
 	Send(host_socket, room_info);
 
@@ -366,7 +352,7 @@ void HostImplementation(SOCKET host_socket)
 				SendMsg(host_socket, MESSAGE_INFO_PAD_ALLOCATED);
 				//Initialize also the thread
 				if (!capture_thread.joinable())
-					capture_thread = std::thread([&]() { SendCapturedWindow(host_socket, selected_window_name, run_loops); });
+					capture_thread = std::thread([&]() { SendCapturedWindow(host_socket, selected_window_name, fixed_buffer, run_loops); });
 			}
 
 			Log::Format("Connection found!!\n");

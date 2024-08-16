@@ -23,10 +23,12 @@
 
 #define ASSERT(x) if(!(x)){*(int*)0 = 0;}
 
-constexpr u32 network_chunk_size = 4096;
-constexpr u32 screen_send_interval_ms = 1000 / 60;
-constexpr s32 send_buffer_width = 500;
-constexpr s32 send_buffer_height = 500;
+static constexpr u32 network_chunk_size = 4096;
+static constexpr u32 screen_send_interval_ms = 1000 / 60;
+static constexpr s32 send_buffer_width = 500;
+static constexpr s32 send_buffer_height = 500;
+static constexpr u32 max_window_name_length = 128;
+static constexpr u32 max_window_enumerations = 128;
 
 enum Message
 {
@@ -53,6 +55,64 @@ enum Message
 	MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD,
 	MESSAGE_ERROR_CLIENT_NOT_CONNECTED,
 	MESSAGE_ERROR_ROOM_NO_LONGER_EXISTS
+};
+
+enum FixedBufferType : u8
+{
+	FIXED_BUFFER_TYPE_SERVER,
+	FIXED_BUFFER_TYPE_HOST,
+	FIXED_BUFFER_TYPE_CLIENT
+};
+
+//Tracks all the direct allocations
+enum ClientAllocations : u8
+{
+	CLIENT_ALLOCATIONS_DUALSHOCK_QUERY = 0,
+	CLIENT_ALLOCATIONS_COMPRESSED_SCREEN_BUFFER,
+	CLIENT_ALLOCATIONS_SIZE,
+};
+
+enum HostAllocations : u8
+{
+	HOST_ALLOCATIONS_COMPRESSED_BUF = 0,
+	HOST_ALLOCATIONS_PREV_COMPRESSED_BUF,
+	HOST_ALLOCATIONS_UNCOMPRESSED_BUF,
+	HOST_ALLOCATIONS_WINDOW_ENUM,
+	HOST_ALLOCATIONS_CLIENT_CONNECTIONS,
+	HOST_ALLOCATIONS_SIZE
+};
+
+enum ServerAllocations : u8
+{
+	SERVER_ALLOCATIONS_SIZE
+};
+
+struct ConnectionInfo
+{
+	PVIGEM_TARGET pad_handle;
+	bool connected = false;
+};
+
+struct WindowEnumeration
+{
+	char window_names[max_window_enumerations * max_window_name_length];
+	u32 windows_count;
+};
+
+const u32 g_client_allocations_offsets[CLIENT_ALLOCATIONS_SIZE] = { 
+	XUSER_MAX_COUNT * sizeof(s32),
+	(send_buffer_width * send_buffer_height * 4) / 10 
+};
+
+const u32 g_host_allocations_offsets[HOST_ALLOCATIONS_SIZE] = {
+	(send_buffer_width * send_buffer_height * 4) / 10,
+	(send_buffer_width * send_buffer_height * 4) / 10,
+	send_buffer_width* send_buffer_height * 4,
+	sizeof(WindowEnumeration),
+	sizeof(ConnectionInfo) * XUSER_MAX_COUNT
+};
+
+const u32 g_server_allocations_offsets[HOST_ALLOCATIONS_SIZE] = {
 };
 
 enum ControllerType
