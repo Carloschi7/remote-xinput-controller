@@ -21,8 +21,6 @@
 #	define DEBUG_BUILD
 #endif
 
-#define ASSERT(x) if(!(x)){*(int*)0 = 0;}
-
 static constexpr u32 network_chunk_size = 4096;
 static constexpr u32 screen_send_interval_ms = 1000 / 60;
 static constexpr s32 send_buffer_width = 500;
@@ -110,9 +108,6 @@ const u32 g_host_allocations_offsets[HOST_ALLOCATIONS_SIZE] = {
 	send_buffer_width* send_buffer_height * 4,
 	sizeof(WindowEnumeration),
 	sizeof(ConnectionInfo) * XUSER_MAX_COUNT
-};
-
-const u32 g_server_allocations_offsets[HOST_ALLOCATIONS_SIZE] = {
 };
 
 enum ControllerType
@@ -268,5 +263,13 @@ static inline bool ReceiveBuffer(SOCKET sock, void* data, u32 size)
 	}
 
 	return true;
+}
+
+#define XE_ASSERT(x, msg, ...)												\
+if(!(x))																	\
+{																			\
+	Log::Format("[Assertion Failed!] [{}, {}]: ", __FUNCTION__, __LINE__);	\
+	Log::Format(msg, __VA_ARGS__);											\
+	*(int*)0 = 0;															\
 }
 

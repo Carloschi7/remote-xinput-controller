@@ -124,14 +124,13 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, Core::Fi
 	auto compression_func = [](void* context, void* data, int size) 
 	{
 		CompressionBuffer* raw_buf = (CompressionBuffer*)context;
-		ASSERT(raw_buf->cursor + size < raw_buf->buf_size);
+		XE_ASSERT(raw_buf->cursor + size < raw_buf->buf_size, "Compressed buffer size too small\n");
 		std::memcpy(raw_buf->buf + raw_buf->cursor, data, size);
 		raw_buf->cursor += size;
 	};
 
 	SetStretchBltMode(mem_hdc, HALFTONE);
 	while (run_loop) {
-
 		RECT window_rect;
 		GetWindowRect(window, &window_rect);
 		s32 width = window_rect.right - window_rect.left;
@@ -140,7 +139,7 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, Core::Fi
 		//TODO: figure out how to get a more consistent buffer
 		StretchBlt(mem_hdc, 0, 0, send_buffer_width, send_buffer_height, window_hdc, 0, 0, width, height, SRCCOPY);
 		s32 rows_parsed = GetDIBits(mem_hdc, bitmap, 0, send_buffer_height, uncompressed_buf, (BITMAPINFO*)&bitmap_header, DIB_RGB_COLORS);
-		ASSERT(rows_parsed == send_buffer_height);
+		XE_ASSERT(rows_parsed == send_buffer_height, "Not all image rows parsed, intended: {}, parsed: {}\n", rows_parsed, send_buffer_height);
 
 		compressed_buf.cursor = 0;
 		stbi_write_jpg_to_func(compression_func, &compressed_buf, send_buffer_width, send_buffer_height, 4, uncompressed_buf, 50);
@@ -150,7 +149,6 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, Core::Fi
 			SendBuffer(server_socket, compressed_buf.buf, compressed_buf.cursor);
 
 			prev_compressed_buf.cursor = compressed_buf.cursor;
-			//TODO std::swap prob better and faster
 			std::swap(prev_compressed_buf.buf, compressed_buf.buf);
 			full_capture_needed = false;
 		}
@@ -277,10 +275,8 @@ void HostImplementation(SOCKET host_socket)
 	char selected_window_name[max_window_name_length] = {};
 	{
 		auto enumeration = static_cast<WindowEnumeration*>(fixed_buffer.GetHostSection(HOST_ALLOCATIONS_WINDOW_ENUM));
-		ASSERT(enumeration);
-		//ZeroMemory(enumeration, sizeof(WindowEnumeration));
-
 		EnumerateWindows(enumeration);
+
 		u32 window_choice;
 		{
 			char cur_window_name[max_window_name_length];
@@ -337,7 +333,7 @@ void HostImplementation(SOCKET host_socket)
 
 			//This happens only if the server allows a connection when the room is full
 			//something in the server code is not quite right
-			ASSERT(index != -1);
+			XE_ASSERT(index != -1, "The server allowed a connection when there was no space, check that\n");
 
 			ConnectionInfo& connection = client_connections[index];
 			connection.pad_handle = vigem_target_x360_alloc();
@@ -362,7 +358,7 @@ void HostImplementation(SOCKET host_socket)
 			u32 client_id;
 			Receive(host_socket, &client_id);
 			Log::Format("Client {} disconnected\n", client_id);
-			ASSERT(client_connections[client_id].connected);
+			XE_ASSERT(client_connections[client_id].connected, "Client needs to be connected here\n");
 			client_connections[client_id].connected = false;
 			vigem_target_remove(client, client_connections[client_id].pad_handle);
 			vigem_target_free(client_connections[client_id].pad_handle);

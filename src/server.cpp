@@ -8,7 +8,7 @@ u32 AllocateNewSyncPrimitive(ServerData* server_data)
 	std::unique_lock lk{ server_data->heap_mtx };
 	if (!server_data->sync_primitive_heap_ptr) {
 		server_data->sync_primitive_heap_ptr = new SyncPrimitiveHeap[initial_allocated_room_count];
-		ASSERT(server_data->sync_primitive_heap_count);
+		XE_ASSERT(server_data->sync_primitive_heap_count, "allocation failed\n");
 		server_data->sync_primitive_heap_count = initial_allocated_room_count;
 	}
 
@@ -29,12 +29,12 @@ u32 AllocateNewSyncPrimitive(ServerData* server_data)
 	}
 
 	SyncPrimitiveHeap* new_ptr = new SyncPrimitiveHeap[heap_count * 2];
-	ASSERT(new_ptr);
+	XE_ASSERT(new_ptr, "new_ptr allocation failed\n");
 	std::memcpy(new_ptr, heap_ptr, heap_count * sizeof(SyncPrimitiveHeap));
 	delete[] heap_ptr;
 	heap_ptr = new_ptr;
 	//Should always be true
-	ASSERT(!heap_ptr[heap_count].slot_taken);
+	XE_ASSERT(!heap_ptr[heap_count].slot_taken, "should be true considering this is newly allocated\n");
 	u32 index = heap_count;
 	heap_count *= 2;
 
@@ -363,7 +363,7 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 				if (rooms[i].host_socket == other_socket)
 					room_index = i;
 			}
-			ASSERT(room_index != -1);
+			XE_ASSERT(room_index != -1, "Room bound to the socket not found\n");
 
 			//TODO this is temporary, should probably care more about the memory
 			u32 compressed_size;
@@ -388,7 +388,7 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 				if (rooms[i].host_socket == other_socket)
 					room_index = i;
 			}
-			ASSERT(room_index != -1);
+			XE_ASSERT(room_index != -1, "Room bound to the socket not found\n");
 			u32 diff_point, new_compressed_buffer_size;
 
 			Receive(other_socket, &diff_point);

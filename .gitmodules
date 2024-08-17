@@ -1,0 +1,3 @@
+[submodule "vigem"]
+	path = dependencies/vigem
+	url = https://github.com/nefarius/ViGEmClient

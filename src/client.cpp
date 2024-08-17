@@ -198,7 +198,7 @@ void ClientImplementation(SOCKET client_socket)
 			case MESSAGE_REQUEST_SEND_COMPLETE_CAPTURE: {
 				std::unique_lock lk{ window_data.buffer_mutex };
 				Receive(client_socket, &window_data.compressed_buffer_size);
-				ASSERT(window_data.compressed_buffer_size <= max_compressed_buf_size);
+				XE_ASSERT(window_data.compressed_buffer_size <= max_compressed_buf_size, "Compressed buffer size is too large\n");
 
 				ReceiveBuffer(client_socket, window_data.buffer, window_data.compressed_buffer_size);
 				lk.unlock();
@@ -213,7 +213,7 @@ void ClientImplementation(SOCKET client_socket)
 				if(window_data.compressed_buffer_size != new_compressed_buffer_size)
 					window_data.compressed_buffer_size = new_compressed_buffer_size;
 
-				ASSERT(window_data.compressed_buffer_size <= max_compressed_buf_size);
+				XE_ASSERT(window_data.compressed_buffer_size <= max_compressed_buf_size, "Compressed buffer size is too large\n");
 				ReceiveBuffer(client_socket, window_data.buffer + diff_point, new_compressed_buffer_size - diff_point);
 				lk.unlock();
 			}break;
@@ -358,7 +358,7 @@ HWND InitGameWindowContext(Core::FixedBuffer& fixed_buffer, GameWindowData* wind
 
 void FetchCaptureToGameWindow(HWND& hwnd, GameWindowData* window_data)
 {
-	ASSERT(window_data);
+	XE_ASSERT(window_data, "window_data needs to be defined\n");
 
 	PAINTSTRUCT ps;
 	HDC hdc = BeginPaint(hwnd, &ps);
