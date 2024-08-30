@@ -112,7 +112,8 @@ const u32 g_host_allocations_offsets[HOST_ALLOCATIONS_SIZE] = {
 
 enum ControllerType
 {
-	CONTROLLER_TYPE_XBOX = 0,
+	CONTROLLER_TYPE_KEYBOARD = 0,
+	CONTROLLER_TYPE_XBOX,
 	CONTROLLER_TYPE_DUALSHOCK,
 };
 
@@ -273,3 +274,4 @@ if(!(x))																	\
 	*(int*)0 = 0;															\
 }
 
+#define XE_KEY_PRESS(key, shl) ((GetAsyncKeyState(key) & 0x8000) ? 1 : 0) << shl

@@ -5,6 +5,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stbi_image.h>
 
+
+
 void QueryRooms(SOCKET client_socket)
 {
 	SendMsg(client_socket, MESSAGE_REQUEST_ROOM_QUERY);
@@ -104,20 +106,17 @@ void ClientImplementation(SOCKET client_socket)
 		bool xbox_slots[4] = {};
 		u32 xbox_controllers = QueryXboxControllers(xbox_slots);
 
-		if (dualshock_controllers == 0 && xbox_controllers == 0) {
-			Log::Format("No joypad found, please connect a joypad to the system to be able to use remote play\n");
-			JslDisconnectAndDisposeAll();
-			return;
-		}
-
 		Log::Format("Select a controller to use for the room:\n");
+		//Assume only one keyboard connected, the main one will be selected
+		const u32 keyboard_count = 1;
+		Log::Format("#0 -> Main keyboard\n");
 		for (u32 i = 0; i < dualshock_controllers; i++) {
-			Log::Format("#{} -> PS4 pad: {}\n", i, controller_handles[i]);
+			Log::Format("#{} -> PS4 pad: {}\n", i + keyboard_count, controller_handles[i]);
 		}
 
 		for (u32 i = 0, c = 0; i < XUSER_MAX_COUNT; i++) {
 			if (xbox_slots[i]) {
-				Log::Format("#{}: ->xbox pad connected to slot {}\n", dualshock_controllers + c, i);
+				Log::Format("#{}: ->xbox pad connected to slot {}\n", keyboard_count +  dualshock_controllers + c, i);
 				c++;
 			}
 		}
@@ -125,13 +124,18 @@ void ClientImplementation(SOCKET client_socket)
 		u32 sel;
 		do {
 			std::cin >> sel;
-			controller_type = sel < dualshock_controllers ? CONTROLLER_TYPE_DUALSHOCK : CONTROLLER_TYPE_XBOX;
-		} while (sel >= xbox_controllers + dualshock_controllers);
+			if (sel == 0)
+				controller_type = CONTROLLER_TYPE_KEYBOARD;
+			else if (sel >= keyboard_count && sel < dualshock_controllers + keyboard_count)
+				controller_type = CONTROLLER_TYPE_DUALSHOCK;
+			else
+				controller_type = CONTROLLER_TYPE_XBOX;
+		} while (sel >= keyboard_count + xbox_controllers + dualshock_controllers);
 
+		controller_id = 0;
 		if (controller_type == CONTROLLER_TYPE_XBOX) {
 			//Simple list index to xbox pad index conversion
-			sel -= dualshock_controllers;
-			controller_id = 0;
+			sel -= dualshock_controllers + keyboard_count;
 			for (u32 i = 0; i <= sel; i++) {
 				
 				if (i != 0)
@@ -140,8 +144,8 @@ void ClientImplementation(SOCKET client_socket)
 				for (; controller_id < XUSER_MAX_COUNT && !xbox_slots[controller_id]; controller_id++) {}
 			}
 		}
-		else {
-			controller_id = controller_handles[sel];
+		else if(controller_type == CONTROLLER_TYPE_DUALSHOCK) {
+			controller_id = controller_handles[sel - keyboard_count];
 		}
 	}
 
@@ -230,6 +234,63 @@ void ClientImplementation(SOCKET client_socket)
 
 		XINPUT_STATE pad_state = {};
 		switch (controller_type) {
+		case CONTROLLER_TYPE_KEYBOARD: {
+			//TODO now the bindings are predefined here, when the UI gets implemented
+			//this need to become customizable
+			u16& buttons = pad_state.Gamepad.wButtons;
+
+			buttons = 0;
+			//Mapping of the dpad
+			buttons |= XE_KEY_PRESS(VK_UP, 0);
+			buttons |= XE_KEY_PRESS(VK_DOWN, 1);
+			buttons |= XE_KEY_PRESS(VK_LEFT, 2);
+			buttons |= XE_KEY_PRESS(VK_RIGHT, 3);
+
+			//Mapping of the start and select/back
+			buttons |= XE_KEY_PRESS(VK_ESCAPE, 4);
+			buttons |= XE_KEY_PRESS(VK_SPACE, 5);
+
+			//Mapping of L3/R3
+			buttons |= XE_KEY_PRESS('Z', 6);
+			buttons |= XE_KEY_PRESS('C', 7);
+
+			//Mapping of RL
+			buttons |= XE_KEY_PRESS('Q', 8);
+			buttons |= XE_KEY_PRESS('E', 9);
+
+			//Mapping of ABXY
+			buttons |= XE_KEY_PRESS('K', 12);
+			buttons |= XE_KEY_PRESS('L', 13);
+			buttons |= XE_KEY_PRESS('J', 14);
+			buttons |= XE_KEY_PRESS('I', 15);
+
+			//Mapping of shoulder buttons (being on a keyboard gradual stated are impossible)
+			pad_state.Gamepad.bLeftTrigger = (GetAsyncKeyState('1') & 0x8000) ? 0xFF : 0x00;
+			pad_state.Gamepad.bRightTrigger = (GetAsyncKeyState('3') & 0x8000) ? 0xFF : 0x00;
+
+			auto assign_thumb_from_keyboard = [](char first, char last) -> s32 {
+				bool first_pressed = GetAsyncKeyState(first) & 0x8000;
+				bool last_pressed = GetAsyncKeyState(last) & 0x8000;
+
+				if ((!first_pressed && !last_pressed) || (first_pressed && last_pressed))
+					return 0;
+				else if (first_pressed)
+					return -INT16_MAX;
+				else
+					return INT16_MAX;
+			};
+
+			pad_state.Gamepad.sThumbLX = assign_thumb_from_keyboard('A', 'D');
+			pad_state.Gamepad.sThumbLY = assign_thumb_from_keyboard('S', 'W');
+			pad_state.Gamepad.sThumbRX = assign_thumb_from_keyboard('F', 'H');
+			pad_state.Gamepad.sThumbRY = assign_thumb_from_keyboard('G', 'T');
+
+		}break;
+		case CONTROLLER_TYPE_XBOX: {
+			s32 pad_read_result = XInputGetState(controller_id, &pad_state);
+			if (pad_read_result != ERROR_SUCCESS) {
+			}
+		}break;
 		case CONTROLLER_TYPE_DUALSHOCK: {
 			//Conversion from DS4 data to XBOX data, so that on the host side
 			//we can emulate every controller like it was an xbox one
@@ -242,12 +303,6 @@ void ClientImplementation(SOCKET client_socket)
 			pad_state.Gamepad.sThumbLY = static_cast<s16>(state.stickLY * (f32)INT16_MAX);
 			pad_state.Gamepad.sThumbRX = static_cast<s16>(state.stickRX * (f32)INT16_MAX);
 			pad_state.Gamepad.sThumbRY = static_cast<s16>(state.stickRY * (f32)INT16_MAX);
-		}break;
-		case CONTROLLER_TYPE_XBOX: {
-
-			s32 pad_read_result = XInputGetState(controller_id, &pad_state);
-			if (pad_read_result != ERROR_SUCCESS) {
-			}
 		}break;
 		}
 
