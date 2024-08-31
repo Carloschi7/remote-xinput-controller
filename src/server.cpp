@@ -222,8 +222,6 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 
 			Room& host_room = rooms[room_to_join];
 			if (host_room.info.current_pads < host_room.info.max_pads) {
-				host_room.info.current_pads++;
-
 				SendMsg(host_room.host_socket, MESSAGE_INFO_CLIENT_JOINING_ROOM);
 
 				Message host_msg;
@@ -248,6 +246,7 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 
 					host_room.connected_sockets[client_slot].sock = other_socket;
 					host_room.connected_sockets[client_slot].connected = true;
+					host_room.info.current_pads++;
 
 					SendMsg(other_socket, MESSAGE_ERROR_NONE);
 					Send(other_socket, host_room.id);
