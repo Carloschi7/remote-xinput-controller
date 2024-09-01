@@ -13,8 +13,16 @@ int main()
 #include "host.hpp"
 #include "client.hpp"
 
+namespace Audio {
+	u32 FillAudioBuffer();
+	s32 CaptureSystemAudio();
+}
 int main()
 {
+
+	Audio::FillAudioBuffer();
+	//Audio::CaptureSystemAudio();
+
 	char controller_test;
 	Log::Format("Welcome to:\n");
 	Log::Format("X    X X X    X XXXXX  X   X XXXXX       XXXX X     X X   X\n");

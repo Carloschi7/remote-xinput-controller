@@ -4,6 +4,9 @@
 
 #include <windows.h>
 #include <Xinput.h>
+#include <Audioclient.h>
+#include <Mmdeviceapi.h>
+
 #include <ViGEm/Client.h>
 
 #include <ws2tcpip.h>
