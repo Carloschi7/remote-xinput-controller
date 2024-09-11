@@ -1,15 +1,18 @@
 #include "host.hpp"
 #include "client.hpp"
 #include "mem.hpp"
+#include "audio.hpp"
 #include <string>
 #include <chrono>
 #include <atomic>
+#include <algorithm>
 
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #define __STDC_LIB_EXT1__
 #include <stbi_image_write.h>
 
 std::atomic<bool> full_capture_needed = true;
+const u32 buffer_length_in_seconds = 1;
 
 void TestXboxPad()
 {
@@ -89,7 +92,7 @@ void EnumerateWindows(WindowEnumeration* enumerations)
 	EnumWindows(EnumerateWindowsCallback, std::bit_cast<LPARAM>(enumerations));
 }
 
-void SendCapturedWindow(SOCKET server_socket, const char* process_name, Core::FixedBuffer& fixed_buffer, std::atomic<bool>& run_loop)
+void SendCapturedData(SOCKET server_socket, const char* process_name, Core::FixedBuffer& fixed_buffer, std::atomic<bool>& run_loop)
 {
 	HWND window = FindWindowA(nullptr, process_name);
 	if (!window) {
@@ -130,21 +133,29 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, Core::Fi
 	};
 
 	SetStretchBltMode(mem_hdc, HALFTONE);
+
+	std::mutex payloads_mutex;
+	std::list<Audio::Payload> payloads;
+
+	std::thread audio_capture_thread = std::thread([&]() { Sleep(4000); 
+		CaptureAudio(payloads, payloads_mutex, run_loop); });
+
 	while (run_loop) {
 		RECT window_rect;
 		GetWindowRect(window, &window_rect);
 		s32 width = window_rect.right - window_rect.left;
 		s32 height = window_rect.bottom - window_rect.top;
 
-		//TODO: figure out how to get a more consistent buffer
+		//Video capture
 		StretchBlt(mem_hdc, 0, 0, send_buffer_width, send_buffer_height, window_hdc, 0, 0, width, height, SRCCOPY);
 		s32 rows_parsed = GetDIBits(mem_hdc, bitmap, 0, send_buffer_height, uncompressed_buf, (BITMAPINFO*)&bitmap_header, DIB_RGB_COLORS);
 		XE_ASSERT(rows_parsed == send_buffer_height, "Not all image rows parsed, intended: {}, parsed: {}\n", rows_parsed, send_buffer_height);
 
 		compressed_buf.cursor = 0;
 		stbi_write_jpg_to_func(compression_func, &compressed_buf, send_buffer_width, send_buffer_height, 4, uncompressed_buf, 50);
+		
 		if (full_capture_needed) {
-			SendMsg(server_socket, MESSAGE_REQUEST_SEND_COMPLETE_CAPTURE);
+			SendMsg(server_socket, MESSAGE_REQUEST_SEND_COMPLETE_VIDEO_CAPTURE);
 			Send(server_socket, compressed_buf.cursor);
 			SendBuffer(server_socket, compressed_buf.buf, compressed_buf.cursor);
 
@@ -156,7 +167,7 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, Core::Fi
 			u32 curr_buf_size = compressed_buf.cursor;
 			u32 diff_point = GetChangedRegionBegin(compressed_buf.buf, prev_compressed_buf.buf, curr_buf_size);
 			if (curr_buf_size != prev_compressed_buf.cursor || diff_point != UINT32_MAX) {
-				SendMsg(server_socket, MESSAGE_REQUEST_SEND_PARTIAL_CAPTURE);
+				SendMsg(server_socket, MESSAGE_REQUEST_SEND_PARTIAL_VIDEO_CAPTURE);
 				Send(server_socket, diff_point);
 				Send(server_socket, curr_buf_size);
 				SendBuffer(server_socket, compressed_buf.buf + diff_point, curr_buf_size - diff_point);
@@ -165,11 +176,49 @@ void SendCapturedWindow(SOCKET server_socket, const char* process_name, Core::Fi
 				std::swap(prev_compressed_buf.buf, compressed_buf.buf);
 			}
 		}
+		//Audio send
+		std::unique_lock lk(payloads_mutex);
+		if (payloads.size() >= 10) {
+			SendMsg(server_socket, MESSAGE_REQUEST_SEND_AUDIO_CAPTURE);
+			u32 packet_size = 480 * 8 * 10;
+			Send(server_socket, packet_size);
+
+			//Send two frames at a time
+			for (u32 i = 0; i < 10; i++) {
+				Audio::Payload& payload = payloads.back();
+				SendBuffer(server_socket, payload.data, packet_size / 10);
+				payloads.pop_back();
+			}
+		}
+		lk.unlock();
 
 		Sleep(screen_send_interval_ms);
 	}
+
+	audio_capture_thread.join();
 	DeleteDC(mem_hdc);
 	DeleteObject(bitmap);
+}
+
+void CaptureAudio(std::list<Audio::Payload>& payloads, std::mutex& payloads_mutex, std::atomic<bool>& run_loop)
+{
+	Audio::Device device;
+	Audio::InitDevice(&device, true);
+
+	Audio::Payload first_frame = {}, second_frame = {};
+	while (run_loop) {
+		WaitForSingleObject(device.event_handle, INFINITE);
+		Audio::CaptureAudioFrame(device, first_frame, second_frame);
+		if (first_frame.initialized) {
+			std::scoped_lock lk(payloads_mutex);
+			payloads.push_front(first_frame);
+
+			if (second_frame.initialized) {
+				payloads.push_front(second_frame);
+			}
+		}
+
+	}
 }
 
 u32 GetChangedRegionBegin(u8* curr_buffer, u8* prev_buffer, u32 size)
@@ -308,7 +357,7 @@ void HostImplementation(SOCKET host_socket)
 		} });
 	Log::Format("Room created (X to close it)\n");
 
-	std::thread capture_thread;
+	std::thread video_capture_thread;
 
 	while (run_loops) {
 
@@ -347,8 +396,9 @@ void HostImplementation(SOCKET host_socket)
 			else {
 				SendMsg(host_socket, MESSAGE_INFO_PAD_ALLOCATED);
 				//Initialize also the thread
-				if (!capture_thread.joinable())
-					capture_thread = std::thread([&]() { SendCapturedWindow(host_socket, selected_window_name, fixed_buffer, run_loops); });
+				if (!video_capture_thread.joinable())
+					video_capture_thread = std::thread([&]() { SendCapturedData(host_socket, selected_window_name, fixed_buffer, run_loops); });
+
 			}
 
 			Log::Format("Connection found!!\n");
@@ -375,7 +425,7 @@ void HostImplementation(SOCKET host_socket)
 	}
 
 	host_input_thd.join();
-	if(capture_thread.joinable())
-		capture_thread.join();
+	if(video_capture_thread.joinable())
+		video_capture_thread.join();
 	VigemDeallocate(client, client_connections, virtual_pads);
 }

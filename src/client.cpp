@@ -1,11 +1,10 @@
 #include "client.hpp"
 #include "JoyShockLibrary.h"
 #include "mem.hpp"
+#include "audio.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stbi_image.h>
-
-
 
 void QueryRooms(SOCKET client_socket)
 {
@@ -186,20 +185,23 @@ void ClientImplementation(SOCKET client_socket)
 	std::atomic<bool> terminate_signal = false;
 	std::thread quit_thread, recv_thread;
 
+	std::mutex payloads_mutex;
+	std::list<Audio::Payload> payloads;
+
 	quit_thread = std::thread([&quit_signal]() {
 		while (true) {
 			char ch; std::cin >> ch;
 			if (ch == 'X') { quit_signal = ch; break; }
 		} });
 
-
 	recv_thread = std::thread([&]() {
+
 		while (true) {
 			Message msg = ReceiveMsg(client_socket);
 			u32 max_compressed_buf_size = g_client_allocations_offsets[CLIENT_ALLOCATIONS_COMPRESSED_SCREEN_BUFFER];
 
 			switch (msg) {
-			case MESSAGE_REQUEST_SEND_COMPLETE_CAPTURE: {
+			case MESSAGE_REQUEST_SEND_COMPLETE_VIDEO_CAPTURE: {
 				std::unique_lock lk{ window_data.buffer_mutex };
 				Receive(client_socket, &window_data.compressed_buffer_size);
 				XE_ASSERT(window_data.compressed_buffer_size <= max_compressed_buf_size, "Compressed buffer size is too large\n");
@@ -207,7 +209,7 @@ void ClientImplementation(SOCKET client_socket)
 				ReceiveBuffer(client_socket, window_data.buffer, window_data.compressed_buffer_size);
 				lk.unlock();
 			}break;
-			case MESSAGE_REQUEST_SEND_PARTIAL_CAPTURE: {
+			case MESSAGE_REQUEST_SEND_PARTIAL_VIDEO_CAPTURE: {
 				u32 diff_point, new_compressed_buffer_size;
 				Receive(client_socket, &diff_point);
 				Receive(client_socket, &new_compressed_buffer_size);
@@ -221,6 +223,18 @@ void ClientImplementation(SOCKET client_socket)
 				ReceiveBuffer(client_socket, window_data.buffer + diff_point, new_compressed_buffer_size - diff_point);
 				lk.unlock();
 			}break;
+			case MESSAGE_REQUEST_SEND_AUDIO_CAPTURE: {
+				std::scoped_lock lk(payloads_mutex);
+				u32 buffer_length;
+				Receive(client_socket, &buffer_length);
+				XE_ASSERT(buffer_length == 480 * 8 * 10, "Size needs to be fixed");
+
+				for (u32 i = 0; i < 10; i++) {
+					Audio::Payload payload;
+					ReceiveBuffer(client_socket, payload.data, buffer_length / 10);
+					payloads.push_front(payload);
+				}
+			}break;
 			case MESSAGE_REQUEST_ROOM_QUIT:
 			case MESSAGE_ERROR_ROOM_NO_LONGER_EXISTS:
 				terminate_signal = true;
@@ -230,6 +244,11 @@ void ClientImplementation(SOCKET client_socket)
 	});
 
 	XINPUT_STATE prev_pad_state = {};
+
+
+	Audio::Device device;
+	Audio::InitDevice(&device, false);
+
 	while (true) {
 
 		XINPUT_STATE pad_state = {};
@@ -313,6 +332,24 @@ void ClientImplementation(SOCKET client_socket)
 			break;
 		}
 
+		//Handle audio input
+		Log::Format("{}\n", payloads.size());
+		{
+			std::scoped_lock lk(payloads_mutex);
+			static bool play = false;
+			if (payloads.size() == 1000 || play) {
+				play = true;
+				if (!payloads.empty()) {
+					Audio::Payload& payload = payloads.back();
+					Audio::RenderAudioFrame(device, payload);
+					payloads.pop_back();
+				}
+			}
+
+			//Audio::Payload payload;
+			//Audio::RenderAudioFrame(device, payload);
+		}
+
 		if (std::memcmp(&prev_pad_state.Gamepad, &pad_state.Gamepad, sizeof(XINPUT_GAMEPAD)) != 0) {
 
 			SendMsg(client_socket, MESSAGE_REQUEST_SEND_PAD_DATA);
@@ -334,8 +371,10 @@ void ClientImplementation(SOCKET client_socket)
 		DispatchMessage(&win_msg);
 	}
 
+
 	recv_thread.join();
 	quit_thread.join();
+	//audio_thread.join();
 	JslDisconnectAndDisposeAll();
 	DestroyGameWindowContext(game_window, window_data.wnd_class);
 }

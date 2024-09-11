@@ -24,6 +24,9 @@
 #	define DEBUG_BUILD
 #endif
 
+#undef max
+#undef min
+
 static constexpr u32 network_chunk_size = 4096;
 static constexpr u32 screen_send_interval_ms = 1000 / 60;
 static constexpr s32 send_buffer_width = 500;
@@ -40,8 +43,9 @@ enum Message
 	MESSAGE_REQUEST_ROOM_QUIT,
 	MESSAGE_REQUEST_ROOM_QUERY,
 	MESSAGE_REQUEST_SEND_PAD_DATA,
-	MESSAGE_REQUEST_SEND_COMPLETE_CAPTURE,
-	MESSAGE_REQUEST_SEND_PARTIAL_CAPTURE,
+	MESSAGE_REQUEST_SEND_COMPLETE_VIDEO_CAPTURE,
+	MESSAGE_REQUEST_SEND_PARTIAL_VIDEO_CAPTURE,
+	MESSAGE_REQUEST_SEND_AUDIO_CAPTURE,
 
 	MESSAGE_INFO_SERVER_PING,
 	MESSAGE_INFO_ROOM_JOINED,
@@ -238,7 +242,7 @@ static inline bool SendBuffer(SOCKET sock, void* data, u32 size)
 	u32 total_bytes_sent = 0;
 	while (total_bytes_sent < size) {
 		char* current_ptr = static_cast<char*>(data) + total_bytes_sent;
-		s32 len = min(network_chunk_size, size - total_bytes_sent);
+		s32 len = std::min(network_chunk_size, size - total_bytes_sent);
 
 		u32 bytes_sent = send(sock, current_ptr, len, 0);
 		if (bytes_sent == SOCKET_ERROR) {
@@ -256,7 +260,7 @@ static inline bool ReceiveBuffer(SOCKET sock, void* data, u32 size)
 	u32 total_bytes_received = 0;
 	while (total_bytes_received < size) {
 		char* current_ptr = static_cast<char*>(data) + total_bytes_received;
-		s32 len = min(network_chunk_size, size - total_bytes_received);
+		s32 len = std::min(network_chunk_size, size - total_bytes_received);
 
 		u32 bytes_received = recv(sock, current_ptr, len, 0);
 		if (bytes_received == SOCKET_ERROR) {

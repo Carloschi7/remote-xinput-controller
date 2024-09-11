@@ -16,11 +16,14 @@ int main()
 namespace Audio {
 	u32 FillAudioBuffer();
 	s32 CaptureSystemAudio();
+	HRESULT RenderAudioFramev();
 }
+
+
 int main()
 {
-
-	Audio::FillAudioBuffer();
+	//Audio::RenderAudioFramev();
+	//Audio::FillAudioBuffer();
 	//Audio::CaptureSystemAudio();
 
 	char controller_test;

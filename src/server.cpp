@@ -353,7 +353,7 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 
 
 		}break;
-		case MESSAGE_REQUEST_SEND_COMPLETE_CAPTURE: {
+		case MESSAGE_REQUEST_SEND_COMPLETE_VIDEO_CAPTURE: {
 			if (!is_this_client_hosting)
 				break;
 
@@ -372,13 +372,13 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 			for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
 				auto& connected_socket = rooms[room_index].connected_sockets[i];
 				if (connected_socket.connected) {
-					SendMsg(connected_socket.sock, MESSAGE_REQUEST_SEND_COMPLETE_CAPTURE);
+					SendMsg(connected_socket.sock, MESSAGE_REQUEST_SEND_COMPLETE_VIDEO_CAPTURE);
 					Send(connected_socket.sock, compressed_size);
 					SendBuffer(connected_socket.sock, buffer.data(), buffer.size());
 				}
 			}
 		}break;
-		case MESSAGE_REQUEST_SEND_PARTIAL_CAPTURE: {
+		case MESSAGE_REQUEST_SEND_PARTIAL_VIDEO_CAPTURE: {
 			if (!is_this_client_hosting)
 				break;
 
@@ -398,13 +398,40 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 			for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
 				auto& connected_socket = rooms[room_index].connected_sockets[i];
 				if (connected_socket.connected) {
-					SendMsg(connected_socket.sock, MESSAGE_REQUEST_SEND_PARTIAL_CAPTURE);
+					SendMsg(connected_socket.sock, MESSAGE_REQUEST_SEND_PARTIAL_VIDEO_CAPTURE);
 					Send(connected_socket.sock, diff_point);
 					Send(connected_socket.sock, new_compressed_buffer_size);
 					SendBuffer(connected_socket.sock, buffer.data(), new_compressed_buffer_size - diff_point);
 				}
 			}
 
+		}break;
+		case MESSAGE_REQUEST_SEND_AUDIO_CAPTURE: {
+			if (!is_this_client_hosting)
+				break;
+
+			s32 room_index = -1;
+			for (u32 i = 0; i < rooms.size(); i++) {
+				if (rooms[i].host_socket == other_socket)
+					room_index = i;
+			}
+			XE_ASSERT(room_index != -1, "Room bound to the socket not found\n");
+
+			u32 buffer_length;
+			Receive(other_socket, &buffer_length);
+			u8* audio_buf = new u8[buffer_length];
+			ReceiveBuffer(other_socket, audio_buf, buffer_length);
+			
+			for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
+				auto& connected_socket = rooms[room_index].connected_sockets[i];
+				if (connected_socket.connected) {
+					SendMsg(connected_socket.sock, MESSAGE_REQUEST_SEND_AUDIO_CAPTURE);
+					Send(connected_socket.sock, buffer_length);
+					SendBuffer(connected_socket.sock, audio_buf, buffer_length);
+				}
+			}
+
+			delete[] audio_buf;
 		}break;
 		case MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD:
 		case MESSAGE_INFO_PAD_ALLOCATED: {

@@ -2,14 +2,16 @@
 #include "incl.hpp"
 #include <condition_variable>
 #include <string>
+#include <list>
 
 namespace Core {
 	class FixedBuffer;
 }
 
-
-
-
+namespace Audio {
+	struct Device;
+	struct Payload;
+}
 
 struct CompressionBuffer
 {
@@ -22,7 +24,8 @@ void TestXboxPad();
 void TestDualshock();
 
 void EnumerateWindows(WindowEnumeration* enumerations);
-void SendCapturedWindow(SOCKET server_socket, const char* process_name, Core::FixedBuffer& fixed_buffer, std::atomic<bool>& run_loop);
+void SendCapturedData(SOCKET server_socket, const char* process_name, Core::FixedBuffer& fixed_buffer, std::atomic<bool>& run_loop);
+void CaptureAudio(std::list<Audio::Payload>& payloads, std::mutex& payloads_mutex, std::atomic<bool>& run_loop);
 u32 GetChangedRegionBegin(u8* curr_buffer, u8* prev_buffer, u32 size);
 
 SOCKET ConnectToServer(const char* address, USHORT port);

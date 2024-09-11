@@ -1,5 +1,6 @@
 #pragma once
 #include "incl.hpp"
+#include <list>
 
 namespace Audio
 {
@@ -9,7 +10,13 @@ namespace Audio
     const IID IID_IAudioCaptureClient = __uuidof(IAudioCaptureClient);
     const IID IID_IAudioRenderClient = __uuidof(IAudioRenderClient);
 
-    struct Devices
+    struct Payload
+    {
+        u8 data[3840];
+        bool initialized = false;
+    };
+
+    struct Device
     {
         HRESULT hr;
         IMMDeviceEnumerator* device_enumerator = nullptr;
@@ -19,6 +26,7 @@ namespace Audio
         IAudioRenderClient* render_client = nullptr;
         WAVEFORMATEX wfx;
         HANDLE event_handle;
+        u32 buffer_frame_count;
 
         void Release() {
             if (event_handle != NULL) CloseHandle(event_handle); 
@@ -31,6 +39,11 @@ namespace Audio
         }
     };
 
+    HRESULT InitDevice(Device* device, bool is_capture_client);
+    void DestroyDevice(Device& devices);
 	s32 CaptureSystemAudio();
 	u32 FillAudioBuffer();
+
+    HRESULT CaptureAudioFrame(Device& dev, Payload& first_frame, Payload& second_frame);
+    HRESULT RenderAudioFrame(Device& dev, Payload& payload);
 }
