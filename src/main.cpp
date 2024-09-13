@@ -16,16 +16,11 @@ int main()
 namespace Audio {
 	u32 FillAudioBuffer();
 	s32 CaptureSystemAudio();
-	HRESULT RenderAudioFramev();
 }
 
 
 int main()
 {
-	//Audio::RenderAudioFramev();
-	//Audio::FillAudioBuffer();
-	//Audio::CaptureSystemAudio();
-
 	char controller_test;
 	Log::Format("Welcome to:\n");
 	Log::Format("X    X X X    X XXXXX  X   X XXXXX       XXXX X     X X   X\n");

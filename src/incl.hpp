@@ -33,6 +33,7 @@ static constexpr s32 send_buffer_width = 500;
 static constexpr s32 send_buffer_height = 500;
 static constexpr u32 max_window_name_length = 128;
 static constexpr u32 max_window_enumerations = 128;
+static constexpr u32 audio_packets_per_single_send = 10;
 
 enum Message
 {

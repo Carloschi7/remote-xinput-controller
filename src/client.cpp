@@ -227,11 +227,12 @@ void ClientImplementation(SOCKET client_socket)
 				std::scoped_lock lk(payloads_mutex);
 				u32 buffer_length;
 				Receive(client_socket, &buffer_length);
-				XE_ASSERT(buffer_length == 480 * 8 * 10, "Size needs to be fixed");
+				XE_ASSERT(buffer_length == Audio::unit_packet_size_in_bytes * audio_packets_per_single_send, "Size needs to be fixed");
 
+				u32 single_send_size = buffer_length / audio_packets_per_single_send;
 				for (u32 i = 0; i < 10; i++) {
 					Audio::Payload payload;
-					ReceiveBuffer(client_socket, payload.data, buffer_length / 10);
+					ReceiveBuffer(client_socket, payload.data, single_send_size);
 					payloads.push_front(payload);
 				}
 			}break;
@@ -333,11 +334,11 @@ void ClientImplementation(SOCKET client_socket)
 		}
 
 		//Handle audio input
-		Log::Format("{}\n", payloads.size());
+		//Log::Format("{}\n", payloads.size());
 		{
 			std::scoped_lock lk(payloads_mutex);
 			static bool play = false;
-			if (payloads.size() == 1000 || play) {
+			if (payloads.size() >= 15 || play) {
 				play = true;
 				if (!payloads.empty()) {
 					Audio::Payload& payload = payloads.back();
@@ -345,9 +346,6 @@ void ClientImplementation(SOCKET client_socket)
 					payloads.pop_back();
 				}
 			}
-
-			//Audio::Payload payload;
-			//Audio::RenderAudioFrame(device, payload);
 		}
 
 		if (std::memcmp(&prev_pad_state.Gamepad, &pad_state.Gamepad, sizeof(XINPUT_GAMEPAD)) != 0) {
@@ -374,7 +372,7 @@ void ClientImplementation(SOCKET client_socket)
 
 	recv_thread.join();
 	quit_thread.join();
-	//audio_thread.join();
+	device.Release();
 	JslDisconnectAndDisposeAll();
 	DestroyGameWindowContext(game_window, window_data.wnd_class);
 }

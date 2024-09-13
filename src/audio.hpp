@@ -10,9 +10,17 @@ namespace Audio
     const IID IID_IAudioCaptureClient = __uuidof(IAudioCaptureClient);
     const IID IID_IAudioRenderClient = __uuidof(IAudioRenderClient);
 
+    static constexpr u32 sample_rate = 48000;
+    static constexpr f32 frequency = 440.f;
+    static constexpr u32 buffer_length_in_seconds = 1;
+    static constexpr u32 unit_packet_size_in_frames = 480;
+    static constexpr u32 frame_size_in_bytes = 8;
+    static constexpr u32 unit_packet_size_in_bytes = unit_packet_size_in_frames * frame_size_in_bytes;
+    static constexpr s32 silent_noise_threshold = 20;
+
     struct Payload
     {
-        u8 data[3840];
+        u8 data[unit_packet_size_in_bytes];
         bool initialized = false;
     };
 

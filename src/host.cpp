@@ -178,15 +178,16 @@ void SendCapturedData(SOCKET server_socket, const char* process_name, Core::Fixe
 		}
 		//Audio send
 		std::unique_lock lk(payloads_mutex);
-		if (payloads.size() >= 10) {
+		if (payloads.size() >= audio_packets_per_single_send) {
 			SendMsg(server_socket, MESSAGE_REQUEST_SEND_AUDIO_CAPTURE);
-			u32 packet_size = 480 * 8 * 10;
+			u32 packet_size = Audio::unit_packet_size_in_bytes * audio_packets_per_single_send;
 			Send(server_socket, packet_size);
 
 			//Send two frames at a time
+			u32 single_send_size = packet_size / audio_packets_per_single_send;
 			for (u32 i = 0; i < 10; i++) {
 				Audio::Payload& payload = payloads.back();
-				SendBuffer(server_socket, payload.data, packet_size / 10);
+				SendBuffer(server_socket, payload.data, single_send_size);
 				payloads.pop_back();
 			}
 		}
@@ -219,6 +220,8 @@ void CaptureAudio(std::list<Audio::Payload>& payloads, std::mutex& payloads_mute
 		}
 
 	}
+
+	device.Release();
 }
 
 u32 GetChangedRegionBegin(u8* curr_buffer, u8* prev_buffer, u32 size)
