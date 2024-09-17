@@ -370,7 +370,7 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 			}
 			XE_ASSERT(room_index != -1, "Room bound to the socket not found\n");
 
-			//TODO this is temporary, should probably care more about the memory
+			//TODO find a way to slow down transmissionif the client is behind in frames
 			u32 compressed_size;
 			Receive(other_socket, &compressed_size);
 			XE_ASSERT(compressed_size <= max_video_buffer_size, "Compressed video size exceeds bounds\n");
