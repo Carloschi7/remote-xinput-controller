@@ -180,11 +180,11 @@ void SendCapturedData(SOCKET server_socket, const char* process_name, Core::Fixe
 		std::unique_lock lk(payloads_mutex);
 		if (payloads.size() >= audio_packets_per_single_send) {
 			SendMsg(server_socket, MESSAGE_REQUEST_SEND_AUDIO_CAPTURE);
-			u32 packet_size = Audio::unit_packet_size_in_bytes * audio_packets_per_single_send;
-			Send(server_socket, packet_size);
+			u32 buffer_size = Audio::unit_packet_size_in_bytes * audio_packets_per_single_send;
+			Send(server_socket, buffer_size);
 
 			//Send two frames at a time
-			u32 single_send_size = packet_size / audio_packets_per_single_send;
+			u32 single_send_size = buffer_size / audio_packets_per_single_send;
 			for (u32 i = 0; i < 10; i++) {
 				Audio::Payload& payload = payloads.back();
 				SendBuffer(server_socket, payload.data, single_send_size);

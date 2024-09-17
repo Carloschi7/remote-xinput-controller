@@ -1,5 +1,6 @@
-#include "server.hpp"
 #include <iostream>
+#include "server.hpp"
+#include "audio.hpp"
 
 static constexpr u32 initial_allocated_room_count = 32;
 
@@ -151,6 +152,11 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 {
 	bool is_this_client_hosting = false;
 	auto& rooms = server_data->rooms;
+
+	u32 max_audio_buffer_size = Audio::unit_packet_size_in_bytes * audio_packets_per_single_send;
+	u32 max_video_buffer_size = (send_buffer_width * send_buffer_height * 4) / 5;
+	u8* audio_buf = new u8[max_audio_buffer_size];
+	u8* video_buf = new u8[max_video_buffer_size];
 
 	while (true) {
 		//We actually care about the possibility of errors here
@@ -367,14 +373,15 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 			//TODO this is temporary, should probably care more about the memory
 			u32 compressed_size;
 			Receive(other_socket, &compressed_size);
-			std::vector<u8> buffer(compressed_size);
-			ReceiveBuffer(other_socket, buffer.data(), buffer.size());
+			XE_ASSERT(compressed_size <= max_video_buffer_size, "Compressed video size exceeds bounds\n");
+
+			ReceiveBuffer(other_socket, video_buf, compressed_size);
 			for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
 				auto& connected_socket = rooms[room_index].connected_sockets[i];
 				if (connected_socket.connected) {
 					SendMsg(connected_socket.sock, MESSAGE_REQUEST_SEND_COMPLETE_VIDEO_CAPTURE);
 					Send(connected_socket.sock, compressed_size);
-					SendBuffer(connected_socket.sock, buffer.data(), buffer.size());
+					SendBuffer(connected_socket.sock, video_buf, compressed_size);
 				}
 			}
 		}break;
@@ -392,8 +399,9 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 
 			Receive(other_socket, &diff_point);
 			Receive(other_socket, &new_compressed_buffer_size);
-			std::vector<u8> buffer(new_compressed_buffer_size - diff_point);
-			ReceiveBuffer(other_socket, buffer.data(), new_compressed_buffer_size - diff_point);
+			XE_ASSERT(new_compressed_buffer_size <= max_video_buffer_size, "Compressed video size exceeds bounds\n");
+
+			ReceiveBuffer(other_socket, video_buf, new_compressed_buffer_size - diff_point);
 
 			for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
 				auto& connected_socket = rooms[room_index].connected_sockets[i];
@@ -401,7 +409,7 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 					SendMsg(connected_socket.sock, MESSAGE_REQUEST_SEND_PARTIAL_VIDEO_CAPTURE);
 					Send(connected_socket.sock, diff_point);
 					Send(connected_socket.sock, new_compressed_buffer_size);
-					SendBuffer(connected_socket.sock, buffer.data(), new_compressed_buffer_size - diff_point);
+					SendBuffer(connected_socket.sock, video_buf, new_compressed_buffer_size - diff_point);
 				}
 			}
 
@@ -419,7 +427,7 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 
 			u32 buffer_length;
 			Receive(other_socket, &buffer_length);
-			u8* audio_buf = new u8[buffer_length];
+
 			ReceiveBuffer(other_socket, audio_buf, buffer_length);
 			
 			for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
@@ -431,7 +439,7 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 				}
 			}
 
-			delete[] audio_buf;
+
 		}break;
 		case MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD:
 		case MESSAGE_INFO_PAD_ALLOCATED: {
@@ -471,4 +479,7 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 		}break;
 		}
 	}
+
+	delete[] video_buf;
+	delete[] audio_buf;
 }

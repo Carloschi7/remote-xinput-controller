@@ -334,7 +334,7 @@ void ClientImplementation(SOCKET client_socket)
 		}
 
 		//Handle audio input
-		//Log::Format("{}\n", payloads.size());
+		Log::Debug::Format("Queued audio frames: {}\n", payloads.size());
 		{
 			std::scoped_lock lk{ payloads_mutex };
 			static bool play = false;
@@ -345,9 +345,6 @@ void ClientImplementation(SOCKET client_socket)
 					Audio::RenderAudioFrame(device, payload);
 					payloads.pop_back();
 				}
-
-				//TODO if there are many packet to process, 
-				//tell the host to reduce the send amount
 			}
 		}
 
