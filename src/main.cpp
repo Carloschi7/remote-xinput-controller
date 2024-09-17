@@ -86,4 +86,11 @@ int main()
 }
 #endif
 
+void ConsoleMain() {
+
+}
+
+void QtMain() {
+	//TODO
+}
 

@@ -224,7 +224,7 @@ void ClientImplementation(SOCKET client_socket)
 				lk.unlock();
 			}break;
 			case MESSAGE_REQUEST_SEND_AUDIO_CAPTURE: {
-				std::scoped_lock lk(payloads_mutex);
+				std::scoped_lock lk{ payloads_mutex };
 				u32 buffer_length;
 				Receive(client_socket, &buffer_length);
 				XE_ASSERT(buffer_length == Audio::unit_packet_size_in_bytes * audio_packets_per_single_send, "Size needs to be fixed");
@@ -336,7 +336,7 @@ void ClientImplementation(SOCKET client_socket)
 		//Handle audio input
 		//Log::Format("{}\n", payloads.size());
 		{
-			std::scoped_lock lk(payloads_mutex);
+			std::scoped_lock lk{ payloads_mutex };
 			static bool play = false;
 			if (payloads.size() >= 15 || play) {
 				play = true;
@@ -345,6 +345,9 @@ void ClientImplementation(SOCKET client_socket)
 					Audio::RenderAudioFrame(device, payload);
 					payloads.pop_back();
 				}
+
+				//TODO if there are many packet to process, 
+				//tell the host to reduce the send amount
 			}
 		}
 

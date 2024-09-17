@@ -211,7 +211,7 @@ void CaptureAudio(std::list<Audio::Payload>& payloads, std::mutex& payloads_mute
 		WaitForSingleObject(device.event_handle, INFINITE);
 		Audio::CaptureAudioFrame(device, first_frame, second_frame);
 		if (first_frame.initialized) {
-			std::scoped_lock lk(payloads_mutex);
+			std::scoped_lock lk{ payloads_mutex };
 			payloads.push_front(first_frame);
 
 			if (second_frame.initialized) {
