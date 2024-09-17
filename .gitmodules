@@ -1,6 +1,6 @@
 [submodule "vigem"]
 	path = dependencies/vigem
 	url = https://github.com/nefarius/ViGEmClient
-[submodule "wxwidgets"]
-	path = dependencies/wxwidgets
+[submodule "dependencies/wxWidgets"]
+	path = dependencies/wxWidgets
 	url = https://github.com/wxWidgets/wxWidgets
