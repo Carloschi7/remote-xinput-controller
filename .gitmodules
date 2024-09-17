@@ -4,3 +4,6 @@
 [submodule "wxwidgets"]
 	path = dependencies/wxwidgets
 	url = https://github.com/wxWidgets/wxWidgets
+[submodule "c7Engine"]
+	path = dependencies/c7Engine
+	url = https://github.com/Carloschi7/C7Engine
