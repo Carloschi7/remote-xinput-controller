@@ -137,8 +137,7 @@ void SendCapturedData(SOCKET server_socket, const char* process_name, Core::Fixe
 	std::mutex payloads_mutex;
 	std::list<Audio::Payload> payloads;
 
-	std::thread audio_capture_thread = std::thread([&]() { Sleep(4000); 
-		CaptureAudio(payloads, payloads_mutex, run_loop); });
+	std::thread audio_capture_thread = SPAWN_THREAD(Sleep(4000); CaptureAudio(payloads, payloads_mutex, run_loop));
 
 	while (run_loop) {
 		RECT window_rect;
@@ -455,7 +454,7 @@ void HostImplementation(SOCKET host_socket)
 				SendMsg(host_socket, MESSAGE_INFO_PAD_ALLOCATED);
 				//Initialize also the thread
 				if (!video_capture_thread.joinable())
-					video_capture_thread = std::thread([&]() { SendCapturedData(host_socket, selected_window_name, fixed_buffer, run_loops); });
+					video_capture_thread = SPAWN_THREAD(SendCapturedData(host_socket, selected_window_name, fixed_buffer, run_loops));
 
 			}
 

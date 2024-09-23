@@ -2,11 +2,28 @@
 
 namespace Core
 {
-	FixedBuffer::FixedBuffer(FixedBufferType type) : type{ type }
+	FixedBuffer::FixedBuffer()
 	{
+		initialized = false;
+	}
+
+	FixedBuffer::FixedBuffer(FixedBufferType type)
+	{
+		Init(type);
+	}
+
+	FixedBuffer::~FixedBuffer() noexcept
+	{
+		::operator delete(buf);
+	}
+
+	void FixedBuffer::Init(FixedBufferType type)
+	{
+		this->type = type;
+
 		switch (type)
 		{
-		case FIXED_BUFFER_TYPE_CLIENT: 
+		case FIXED_BUFFER_TYPE_CLIENT:
 			for (u32 i = 0; i < CLIENT_ALLOCATIONS_SIZE; i++) {
 				buf_size += g_client_allocations_offsets[i];
 			}
@@ -20,21 +37,18 @@ namespace Core
 		buf = ::operator new(buf_size);
 		//If this does not succeed, the program cannot start(not enough mem can be allocated)
 		XE_ASSERT(buf, "allocation failed\n");
-	}
-
-	FixedBuffer::~FixedBuffer() noexcept
-	{
-		::operator delete(buf);
+		initialized = true;
 	}
 
 	void FixedBuffer::ResetMemory()
 	{
+		XE_ASSERT(initialized, "FixedBuffer needs to be initialized\n");
 		ZeroMemory(buf, buf_size);
 	}
 
 	void* FixedBuffer::GetClientSection(ClientAllocations allocation)
 	{
-		XE_ASSERT(type == FIXED_BUFFER_TYPE_CLIENT && allocation < CLIENT_ALLOCATIONS_SIZE, 
+		XE_ASSERT(initialized && type == FIXED_BUFFER_TYPE_CLIENT && allocation < CLIENT_ALLOCATIONS_SIZE, 
 			"Wrong parameter or wrong fixed buffer type selection\n");
 
 		u32 offset = 0;
@@ -46,7 +60,7 @@ namespace Core
 	}
 	void* FixedBuffer::GetHostSection(HostAllocations allocation)
 	{
-		XE_ASSERT(type == FIXED_BUFFER_TYPE_HOST && allocation < HOST_ALLOCATIONS_SIZE,
+		XE_ASSERT(initialized && type == FIXED_BUFFER_TYPE_HOST && allocation < HOST_ALLOCATIONS_SIZE,
 			"Wrong parameter or wrong fixed buffer type selection\n");
 
 		u32 offset = 0;

@@ -28,8 +28,15 @@ namespace Audio
 
         // Initialize COM
         XE_AUDIO_ASSERT(CoInitialize(NULL));
-        XE_AUDIO_ASSERT(CoCreateInstance(CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
-            IID_IMMDeviceEnumerator, (void**)&dev.device_enumerator));
+        //XE_AUDIO_ASSERT(CoCreateInstance(CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
+        //    IID_IMMDeviceEnumerator, (void**)&dev.device_enumerator));
+        dev.hr = CoCreateInstance(CLSID_MMDeviceEnumerator, NULL, CLSCTX_ALL,
+            IID_IMMDeviceEnumerator, (void**)&dev.device_enumerator); 
+        if (FAILED(dev.hr)) {
+            
+                dev.Release(); 
+                return dev.hr; 
+        }
         XE_AUDIO_ASSERT(dev.device_enumerator->GetDefaultAudioEndpoint(eRender, eConsole, &dev.device));
         XE_AUDIO_ASSERT(dev.device->Activate(IID_IAudioClient, CLSCTX_ALL, NULL, (void**)&dev.audio_client));
 

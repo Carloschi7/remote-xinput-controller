@@ -105,10 +105,9 @@ u32 QueryXboxControllers(bool slots[XUSER_MAX_COUNT])
 	return xbox_controllers;
 }
 
-void ClientImplementation(SOCKET client_socket)
+void ConsoleClientEntry(SOCKET client_socket)
 {
 	u32 chosen_room;
-	u64 room_id;
 	Message connection_status = MESSAGE_EMPTY;
 	ControllerType controller_type;
 	u32 controller_id;
@@ -186,14 +185,21 @@ void ClientImplementation(SOCKET client_socket)
 
 	} while (connection_status != MESSAGE_ERROR_NONE);
 
+	Log::Format("Connection was successful, (X to quit the room)!\n");
+
+	ExecuteClient(fixed_buffer, client_socket, controller_type, controller_id, true, nullptr);
+}
+
+void ExecuteClient(Core::FixedBuffer& fixed_buffer, SOCKET client_socket, ControllerType controller_type, 
+	u32 controller_id, bool console_impl, void* extra_wx_data)
+{
+	u64 room_id;
 	GameWindowData window_data;
 	Receive(client_socket, &room_id);
 
 	//At the beginning, src and dest dimensions are the same
 	window_data.dst_width = send_buffer_width;
 	window_data.dst_height = send_buffer_height;
-
-	Log::Format("Connection was successful, (X to quit the room)!\n");
 
 	HWND game_window = InitGameWindowContext(fixed_buffer, &window_data);
 	SetTimer(game_window, 1, screen_send_interval_ms, nullptr);
@@ -205,11 +211,13 @@ void ClientImplementation(SOCKET client_socket)
 	std::mutex payloads_mutex;
 	std::list<Audio::Payload> payloads;
 
-	quit_thread = std::thread([&quit_signal]() {
-		while (true) {
-			char ch; std::cin >> ch;
-			if (ch == 'X') { quit_signal = ch; break; }
-		} });
+	if (console_impl) {
+		quit_thread = std::thread([&quit_signal]() {
+			while (true) {
+				char ch; std::cin >> ch;
+				if (ch == 'X') { quit_signal = ch; break; }
+			} });
+	}
 
 	recv_thread = std::thread([&]() {
 
@@ -233,7 +241,7 @@ void ClientImplementation(SOCKET client_socket)
 
 				std::unique_lock lk{ window_data.buffer_mutex };
 
-				if(window_data.compressed_buffer_size != new_compressed_buffer_size)
+				if (window_data.compressed_buffer_size != new_compressed_buffer_size)
 					window_data.compressed_buffer_size = new_compressed_buffer_size;
 
 				XE_ASSERT(window_data.compressed_buffer_size <= max_compressed_buf_size, "Compressed buffer size is too large\n");
@@ -259,7 +267,7 @@ void ClientImplementation(SOCKET client_socket)
 				return;
 			}
 		}
-	});
+		});
 
 	XINPUT_STATE prev_pad_state = {};
 
@@ -344,10 +352,23 @@ void ClientImplementation(SOCKET client_socket)
 		}
 
 		//Find out if the user wants to quit the room
-		if (quit_signal == 'X') {
-			SendMsg(client_socket, MESSAGE_REQUEST_ROOM_QUIT);
-			Send(client_socket, room_id);
-			break;
+		if (console_impl) {
+			if (quit_signal == 'X') {
+				SendMsg(client_socket, MESSAGE_REQUEST_ROOM_QUIT);
+				Send(client_socket, room_id);
+				break;
+			}
+		}
+		else {
+			XE_ASSERT(extra_wx_data, "Extra data required if calling from wx\n");
+
+			using AtomicBool = std::atomic<bool>;
+			auto exec_thread_flag = static_cast<AtomicBool*>(extra_wx_data);
+			if (exec_thread_flag->load()) {
+				SendMsg(client_socket, MESSAGE_REQUEST_ROOM_QUIT);
+				Send(client_socket, room_id);
+				break;
+			}
 		}
 
 		//Handle audio input
@@ -374,7 +395,7 @@ void ClientImplementation(SOCKET client_socket)
 			//TODO handle MESSAGE_ERROR_CLIENT_NOT_CONNECTED
 			prev_pad_state = pad_state;
 		}
-	
+
 		if (terminate_signal) {
 			Log::Format("Host closed the room or its no longer reachable, press anything to close\n");
 			break;
@@ -388,7 +409,10 @@ void ClientImplementation(SOCKET client_socket)
 
 
 	recv_thread.join();
-	quit_thread.join();
+	
+	if(console_impl)
+		quit_thread.join();
+	
 	device.Release();
 	JslDisconnectAndDisposeAll();
 	DestroyGameWindowContext(game_window, window_data.wnd_class);

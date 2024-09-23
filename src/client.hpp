@@ -24,7 +24,10 @@ u32 QueryDualshockCount();
 u32 QueryXboxCount();
 u32 QueryDualshockControllers(Core::FixedBuffer& fixed_buffer, s32** controller_handles);
 u32 QueryXboxControllers(bool slots[XUSER_MAX_COUNT]);
-void ClientImplementation(SOCKET client_socket);
+
+void ConsoleClientEntry(SOCKET client_socket);
+void ExecuteClient(Core::FixedBuffer& fixed_buffer, SOCKET client_socket, ControllerType controller_type,
+	u32 controller_id, bool console_impl, void* extra_wx_data);
 
 HWND InitGameWindowContext(Core::FixedBuffer& fixed_buffer, GameWindowData* window_data);
 void FetchCaptureToGameWindow(HWND& hwnd, GameWindowData* window_data);

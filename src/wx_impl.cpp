@@ -1,5 +1,7 @@
 #include "wx_impl.hpp"
 #include "incl.hpp"
+#include "client.hpp"
+
 
 namespace WX
 {
@@ -20,7 +22,6 @@ namespace WX
 		Room::Info* rooms_data = nullptr;
 		u32 rooms_count = 0;
 
-		void QueryRooms(SOCKET client_socket, Room::Info** rooms_data, u32* rooms_count);
 		QueryRooms(comp.local_socket, &rooms_data, &rooms_count);
 
 		auto* list_box = comp.main_frame_list_box;
@@ -68,6 +69,13 @@ namespace WX
 		Message connection_status = ReceiveMsg(comp.local_socket);
 
 		switch (connection_status) {
+		case MESSAGE_ERROR_NONE: {
+			comp.fixed_buffer.Init(FIXED_BUFFER_TYPE_CLIENT);
+			ControllerType controller_type = CONTROLLER_TYPE_KEYBOARD;
+			u32 controller_id = 0;
+			comp.exec_thread = SPAWN_THREAD(ExecuteClient(comp.fixed_buffer, comp.local_socket,
+				controller_type, controller_id, false, &comp.exec_thread_flag));
+		}break;
 		case MESSAGE_ERROR_INDEX_OUT_OF_BOUNDS:
 			wxMessageBox("Internal error, please refresh and try again", "Error", wxOK | wxICON_ERROR);
 			break;
@@ -79,7 +87,7 @@ namespace WX
 			break;
 		}
 
-		wxMessageBox("Mhanz", "Error", wxOK | wxICON_ERROR);
+
 	}
 	
 

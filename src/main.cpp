@@ -76,7 +76,7 @@ int main()
 		if (action == 'C')
 			HostImplementation(local_socket);
 		else if (action == 'J')
-			ClientImplementation(local_socket);
+			ConsoleClientEntry(local_socket);
 		else if (action == 'Q') {} // Just repeate the loop
 		else break;
 	}

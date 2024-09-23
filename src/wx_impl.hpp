@@ -1,6 +1,9 @@
 #pragma once
 #include <wx/wx.h>
 #include <wx/listctrl.h>
+#include <thread>
+#include "mem.hpp"
+
 
 namespace WX
 {
@@ -10,6 +13,9 @@ namespace WX
 	struct Components
 	{
 		SOCKET local_socket;
+		std::thread exec_thread;
+		std::atomic<bool> exec_thread_flag;
+		Core::FixedBuffer fixed_buffer;
 
 		ConnectionFrame* connection_frame;
 		wxPanel* connection_frame_panel;
