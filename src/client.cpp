@@ -6,7 +6,24 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include <stbi_image.h>
 
-void QueryRooms(SOCKET client_socket)
+void QueryRooms(SOCKET client_socket, Room::Info** rooms_data, u32* rooms_count)
+{
+	XE_ASSERT(rooms_count, "The pointer needs to be defined\n");
+	SendMsg(client_socket, MESSAGE_REQUEST_ROOM_QUERY);
+
+	Receive(client_socket, rooms_count);
+	if (*rooms_count == 0)
+		return;
+
+	//TODO allocate this on a wx preallocated buffer?
+	*rooms_data = new Room::Info[*rooms_count];
+
+	for (u32 i = 0; i < *rooms_count; i++) {
+		Receive(client_socket, (*rooms_data) + i);
+	}
+}
+
+void PrintQueriedRooms(SOCKET client_socket)
 {
 	SendMsg(client_socket, MESSAGE_REQUEST_ROOM_QUERY);
 

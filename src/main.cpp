@@ -1,5 +1,5 @@
 #include "incl.hpp"
-#if defined SERVER_IMPL
+#if defined IMPLEMENTATION_SERVER
 
 #include "server.hpp"
 
@@ -8,7 +8,7 @@ int main()
 	StartServer();
 }
 
-#else
+#elif defined IMPLEMENTATION_CONSOLE
 
 #include "host.hpp"
 #include "client.hpp"
@@ -69,7 +69,7 @@ int main()
 	}
 
 	while (true) {
-		QueryRooms(local_socket);
+		PrintQueriedRooms(local_socket);
 		Log::Format("Create a room (C), join a room (J), Query rooms again(Q) (Anything else to exit)\n");
 		std::cin >> action;
 
@@ -84,13 +84,14 @@ int main()
 	closesocket(local_socket);
 	WSACleanup();
 }
+
+#elif defined IMPLEMENTATION_WX
+#include "wx_impl.hpp"
+
+int main()
+{
+	return WX::EntryPoint();
+}
+
 #endif
-
-void ConsoleMain() {
-
-}
-
-void QtMain() {
-	//TODO
-}
 

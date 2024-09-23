@@ -29,5 +29,6 @@ void CaptureAudio(std::list<Audio::Payload>& payloads, std::mutex& payloads_mute
 u32 GetChangedRegionBegin(u8* curr_buffer, u8* prev_buffer, u32 size);
 
 SOCKET ConnectToServer(const char* address, USHORT port);
+bool ValidateIpAddress(const char* address);
 void VigemDeallocate(PVIGEM_CLIENT client, ConnectionInfo* client_connections, u32 count);
 void HostImplementation(SOCKET host_socket);

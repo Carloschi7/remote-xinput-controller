@@ -17,7 +17,9 @@ struct GameWindowData
 	WNDCLASS wnd_class;
 };
 
-void QueryRooms(SOCKET client_socket);
+void QueryRooms(SOCKET client_socket, Room::Info** rooms_data, u32* rooms_count);
+void PrintQueriedRooms(SOCKET client_socket);
+
 u32 QueryDualshockCount();
 u32 QueryXboxCount();
 u32 QueryDualshockControllers(Core::FixedBuffer& fixed_buffer, s32** controller_handles);

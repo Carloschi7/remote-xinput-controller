@@ -244,6 +244,9 @@ SOCKET ConnectToServer(const char* address, USHORT port)
 	WSADATA wsaData;
 	s32 result = 0;
 
+	if (!ValidateIpAddress(address))
+		return INVALID_SOCKET;
+
 	s32 wsa_startup = WSAStartup(MAKEWORD(2, 2), &wsaData);
 	if (wsa_startup != 0) {
 		Log::Format("WSAStartup failed: {}\n", wsa_startup);
@@ -264,6 +267,58 @@ SOCKET ConnectToServer(const char* address, USHORT port)
 	}
 
 	return connecting_socket;
+}
+
+bool ValidateIpAddress(const char* address)
+{
+	u32 str_length = 0;
+	u8 dot_pos[4];
+	u32 dot_count = 0;
+
+	while (address[str_length++] != 0) {}
+
+	for (u32 i = 0; i < str_length; i++) {
+		if (address[i] == '.') {
+			if (dot_count >= 3)
+				return false;
+
+			dot_pos[dot_count++] = (u8)i;
+		}
+	}
+
+	if (dot_count != 3)
+		return false;
+
+	dot_pos[3] = str_length;
+
+	auto is_number_contained = [](char nums[4]) {
+		for (u32 i = 0; i < 4 && nums[i] != 0; i++) {
+			if (nums[i] < '0' || nums[i] > '9')
+				return false;
+		}
+
+		return true;
+	};
+
+	u32 start_index = 0;
+	for (u32 i = 0; i < 4; i++) {
+
+		char nums[4] = {};
+		u32 skip_dot = (i == 0) ? 0 : 1;
+		std::memcpy(nums, address + start_index + skip_dot, dot_pos[i] - start_index - skip_dot);
+
+		if (!is_number_contained(nums))
+			return false;
+
+		s32 val = std::atoi(nums);
+		if (val < 0 || val >= 256)
+			return false;
+
+		start_index = dot_pos[i];
+	}
+
+
+	return true;
 }
 
 void VigemDeallocate(PVIGEM_CLIENT client, ConnectionInfo* client_connections, u32 count)

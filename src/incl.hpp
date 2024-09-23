@@ -1,6 +1,12 @@
 #pragma once
 #define WIN32_LEAN_AND_MEAN
-//#define SERVER_IMPL
+#define IMPLEMENTATION_SERVER
+//#define IMPLEMENTATION_CONSOLE // Unsafe to use, for debug purposes
+#define IMPLEMENTATION_WX
+//Provide compatibility with wxWidgets
+#ifndef _CRT_SECURE_NO_WARNINGS
+#	define _CRT_SECURE_NO_WARNINGS
+#endif
 
 #include <windows.h>
 #include <Xinput.h>
@@ -155,6 +161,7 @@ struct Room
 		char name[16];
 		u16 max_pads;
 		u16 current_pads;
+		//Unused		
 		u32 host_window_width;
 		u32 host_window_height;
 	} info;
