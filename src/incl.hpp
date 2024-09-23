@@ -1,6 +1,6 @@
 #pragma once
 #define WIN32_LEAN_AND_MEAN
-#define IMPLEMENTATION_SERVER
+//#define IMPLEMENTATION_SERVER
 //#define IMPLEMENTATION_CONSOLE // Unsafe to use, for debug purposes
 #define IMPLEMENTATION_WX
 //Provide compatibility with wxWidgets

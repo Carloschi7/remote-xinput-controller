@@ -52,12 +52,6 @@ namespace WX
 			list_box->SetItem(i, 2, max_pads_char);
 		}
 
-		list_box->InsertItem(1, item);
-
-		list_box->SetItem(1, 0, "rooms_data->name");
-		list_box->SetItem(1, 1, "current_pads_char");
-		list_box->SetItem(1, 2, "max_pads_char");
-
 		delete[] rooms_data;
 	}
 
@@ -84,6 +78,8 @@ namespace WX
 			wxMessageBox("Host had issues allocating a virtual pad, please try again", "Error", wxOK | wxICON_ERROR);
 			break;
 		}
+
+		wxMessageBox("Mhanz", "Error", wxOK | wxICON_ERROR);
 	}
 	
 
