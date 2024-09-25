@@ -16,6 +16,8 @@ namespace WX
 		std::thread exec_thread;
 		std::atomic<bool> exec_thread_flag;
 		Core::FixedBuffer fixed_buffer;
+		u32 xbox_controllers_count;
+		u32 dualshock_controllers_count;
 
 		ConnectionFrame* connection_frame;
 		wxPanel* connection_frame_panel;
@@ -26,10 +28,12 @@ namespace WX
 		MainFrame* main_frame;
 		wxPanel* main_frame_panel;
 		wxStaticText* main_frame_static_text;
-		wxListCtrl* main_frame_list_box;
+		wxListCtrl* main_frame_rooms_list_box;
+		wxListCtrl* main_frame_controllers_list_box;
 		wxListItem main_frame_rooms_list_item;
 		wxButton* main_frame_create_button;
 		wxButton* main_frame_join_button;
+		wxButton* main_frame_query_button;
 	};
 
 	class MainFrame : public wxFrame
@@ -37,6 +41,7 @@ namespace WX
 	public:
 		MainFrame(Components& components, const wxString& title);
 
+		void QueryButtonCallback(wxCommandEvent& event);
 		void CreateButtonCallback(wxCommandEvent& event);
 		void JoinButtonCallback(wxCommandEvent& event);
 
@@ -56,7 +61,7 @@ namespace WX
 	public:
 		bool OnInit();
 
-		Components comp;
+		Components comp = {};
 	};
 
 	int EntryPoint();
