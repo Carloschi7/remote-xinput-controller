@@ -89,6 +89,7 @@ static BOOL EnumerateWindowsCallback(HWND hwnd, LPARAM lparam)
 
 void EnumerateWindows(WindowEnumeration* enumerations)
 {
+	ZeroMemory(enumerations, sizeof(WindowEnumeration));
 	EnumWindows(EnumerateWindowsCallback, std::bit_cast<LPARAM>(enumerations));
 }
 

@@ -52,6 +52,13 @@ static constexpr u32 max_window_name_length = 128;
 static constexpr u32 max_window_enumerations = 128;
 static constexpr u32 audio_packets_per_single_send = 10;
 
+namespace WX {
+	extern const u32 components_struct_size;
+	extern const u32 connection_frame_class_size;
+	extern const u32 main_frame_class_size;
+	extern const u32 room_creation_frame_class_size;
+}
+
 enum Message
 {
 	MESSAGE_EMPTY = 0,
@@ -82,17 +89,16 @@ enum Message
 
 enum FixedBufferType : u8
 {
-	FIXED_BUFFER_TYPE_SERVER,
+	FIXED_BUFFER_TYPE_SERVER = 0,
 	FIXED_BUFFER_TYPE_HOST,
-	FIXED_BUFFER_TYPE_CLIENT
+	FIXED_BUFFER_TYPE_CLIENT,
+	FIXED_BUFFER_TYPE_WX
 };
 
 //Tracks all the direct allocations
-enum ClientAllocations : u8
+enum ServerAllocations : u8
 {
-	CLIENT_ALLOCATIONS_DUALSHOCK_QUERY = 0,
-	CLIENT_ALLOCATIONS_COMPRESSED_SCREEN_BUFFER,
-	CLIENT_ALLOCATIONS_SIZE,
+	SERVER_ALLOCATIONS_SIZE
 };
 
 enum HostAllocations : u8
@@ -105,9 +111,19 @@ enum HostAllocations : u8
 	HOST_ALLOCATIONS_SIZE
 };
 
-enum ServerAllocations : u8
+enum ClientAllocations : u8
 {
-	SERVER_ALLOCATIONS_SIZE
+	CLIENT_ALLOCATIONS_COMPRESSED_SCREEN_BUFFER = 0,
+	CLIENT_ALLOCATIONS_SIZE,
+};
+
+enum WxAllocations : u8
+{
+	WX_ALLOCATIONS_COMPONENTS = 0,
+	WX_ALLOCATIONS_CONNECTION_FRAME,
+	WX_ALLOCATIONS_MAIN_FRAME,
+	WX_ALLOCATIONS_ROOM_CREATION_FRAME,
+	WX_ALLOCATIONS_SIZE
 };
 
 struct ConnectionInfo
@@ -123,7 +139,6 @@ struct WindowEnumeration
 };
 
 const u32 g_client_allocations_offsets[CLIENT_ALLOCATIONS_SIZE] = { 
-	XUSER_MAX_COUNT * sizeof(s32),
 	(send_buffer_width * send_buffer_height * 4) / 10 
 };
 
@@ -133,6 +148,13 @@ const u32 g_host_allocations_offsets[HOST_ALLOCATIONS_SIZE] = {
 	send_buffer_width* send_buffer_height * 4,
 	sizeof(WindowEnumeration),
 	sizeof(ConnectionInfo) * XUSER_MAX_COUNT
+};
+
+const u32 g_wx_allocations_offsets[WX_ALLOCATIONS_SIZE] = {
+	WX::components_struct_size,
+	WX::connection_frame_class_size,
+	WX::main_frame_class_size,
+	WX::room_creation_frame_class_size
 };
 
 enum ControllerType
@@ -184,6 +206,13 @@ struct Room
 	};
 	u32 sync_primitives_index;
 	Message connecting_message;
+};
+
+struct ControllerData
+{
+	u32 dualshock_count, xbox_count;
+	s32 dualshock_handles[4];
+	u8 xbox_handles[4];
 };
 
 namespace Log

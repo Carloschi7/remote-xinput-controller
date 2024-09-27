@@ -68,7 +68,7 @@ u32 QueryXboxCount()
 	return xbox_controllers;
 }
 
-u32 QueryDualshockControllers(Core::FixedBuffer& fixed_buffer, s32** controller_handles)
+u32 QueryDualshockControllers(s32* controller_handles, bool disconnect_jsl)
 {
 	s32 dualshock_controllers = JslConnectDevices();
 	if (dualshock_controllers > XUSER_MAX_COUNT) {
@@ -77,18 +77,17 @@ u32 QueryDualshockControllers(Core::FixedBuffer& fixed_buffer, s32** controller_
 	}
 
 	if (controller_handles && dualshock_controllers != 0) {
-		*controller_handles = static_cast<s32*>(fixed_buffer.GetClientSection(CLIENT_ALLOCATIONS_DUALSHOCK_QUERY));
-		JslGetConnectedDeviceHandles(*controller_handles, dualshock_controllers);
+		JslGetConnectedDeviceHandles(controller_handles, dualshock_controllers);
 	}
 
-	if (!controller_handles) {
+	if (disconnect_jsl) {
 		JslDisconnectAndDisposeAll();
 	}
 
 	return dualshock_controllers;
 }
 
-u32 QueryXboxControllers(bool slots[XUSER_MAX_COUNT])
+u32 QueryXboxControllers(u8* controller_handles)
 {
 	u32 xbox_controllers = 0;
 	for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
@@ -97,12 +96,20 @@ u32 QueryXboxControllers(bool slots[XUSER_MAX_COUNT])
 		if (pad_read_result == ERROR_SUCCESS) {
 			xbox_controllers++;
 			
-			if(slots)
-				slots[i] = true;
+			if (controller_handles)
+				controller_handles[i] = 0x01;
 		}
 	}
 
 	return xbox_controllers;
+}
+
+ControllerData QueryAllControllers()
+{
+	ControllerData data = {};
+	data.xbox_count = QueryXboxControllers(data.xbox_handles);
+	data.dualshock_count = QueryDualshockControllers(data.dualshock_handles, false);
+	return data;
 }
 
 void ConsoleClientEntry(SOCKET client_socket)
@@ -116,22 +123,21 @@ void ConsoleClientEntry(SOCKET client_socket)
 	
 	//Check for controllers controllers
 	{
-		s32* controller_handles = nullptr;
-		u32 dualshock_controllers = QueryDualshockControllers(fixed_buffer, &controller_handles);
-		bool xbox_slots[4] = {};
-		u32 xbox_controllers = QueryXboxControllers(xbox_slots);
+		ControllerData controller_data = QueryAllControllers();
+		const u32& xbox_count = controller_data.xbox_count;
+		const u32& dualshock_count = controller_data.dualshock_count;
 
 		Log::Format("Select a controller to use for the room:\n");
 		//Assume only one keyboard connected, the main one will be selected
 		const u32 keyboard_count = 1;
 		Log::Format("#0 -> Main keyboard\n");
-		for (u32 i = 0; i < dualshock_controllers; i++) {
-			Log::Format("#{} -> PS4 pad: {}\n", i + keyboard_count, controller_handles[i]);
+		for (u32 i = 0; i < dualshock_count; i++) {
+			Log::Format("#{} -> PS4 pad: {}\n", i + keyboard_count, controller_data.dualshock_handles[i]);
 		}
 
 		for (u32 i = 0, c = 0; i < XUSER_MAX_COUNT; i++) {
-			if (xbox_slots[i]) {
-				Log::Format("#{}: ->xbox pad connected to slot {}\n", keyboard_count +  dualshock_controllers + c, i);
+			if (controller_data.xbox_handles[i] & 0x01) {
+				Log::Format("#{}: ->xbox pad connected to slot {}\n", keyboard_count +  dualshock_count + c, i);
 				c++;
 			}
 		}
@@ -141,26 +147,26 @@ void ConsoleClientEntry(SOCKET client_socket)
 			std::cin >> sel;
 			if (sel == 0)
 				controller_type = CONTROLLER_TYPE_KEYBOARD;
-			else if (sel >= keyboard_count && sel < dualshock_controllers + keyboard_count)
+			else if (sel >= keyboard_count && sel < dualshock_count + keyboard_count)
 				controller_type = CONTROLLER_TYPE_DUALSHOCK;
 			else
 				controller_type = CONTROLLER_TYPE_XBOX;
-		} while (sel >= keyboard_count + xbox_controllers + dualshock_controllers);
+		} while (sel >= keyboard_count + xbox_count + dualshock_count);
 
 		controller_id = 0;
 		if (controller_type == CONTROLLER_TYPE_XBOX) {
 			//Simple list index to xbox pad index conversion
-			sel -= dualshock_controllers + keyboard_count;
+			sel -= dualshock_count + keyboard_count;
 			for (u32 i = 0; i <= sel; i++) {
 				
 				if (i != 0)
 					controller_id++;
 
-				for (; controller_id < XUSER_MAX_COUNT && !xbox_slots[controller_id]; controller_id++) {}
+				for (; controller_id < XUSER_MAX_COUNT && !controller_data.xbox_handles[controller_id]; controller_id++) {}
 			}
 		}
 		else if(controller_type == CONTROLLER_TYPE_DUALSHOCK) {
-			controller_id = controller_handles[sel - keyboard_count];
+			controller_id = controller_data.dualshock_handles[sel - keyboard_count];
 		}
 	}
 

@@ -12,9 +12,13 @@ namespace Core
 		~FixedBuffer() noexcept;
 
 		void Init(FixedBufferType type);
+		inline bool Initialized() { return initialized; }
+
+		void ResetState();
 		void ResetMemory();
 		void* GetClientSection(ClientAllocations allocation);
 		void* GetHostSection(HostAllocations allocation);
+		void* GetWxSection(WxAllocations allocation);
 
 	private:
 		void* buf = nullptr;

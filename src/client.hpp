@@ -22,8 +22,9 @@ void PrintQueriedRooms(SOCKET client_socket);
 
 u32 QueryDualshockCount();
 u32 QueryXboxCount();
-u32 QueryDualshockControllers(Core::FixedBuffer& fixed_buffer, s32** controller_handles);
-u32 QueryXboxControllers(bool slots[XUSER_MAX_COUNT]);
+u32 QueryDualshockControllers(s32* controller_handles, bool disconnect_jsl);
+u32 QueryXboxControllers(u8* controller_handles);
+ControllerData QueryAllControllers();
 
 void ConsoleClientEntry(SOCKET client_socket);
 void ExecuteClient(Core::FixedBuffer& fixed_buffer, SOCKET client_socket, ControllerType controller_type,
