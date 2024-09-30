@@ -183,6 +183,7 @@ void SendCapturedData(SOCKET server_socket, const char* process_name, Core::Fixe
 			u32 buffer_size = Audio::unit_packet_size_in_bytes * audio_packets_per_single_send;
 			Send(server_socket, buffer_size);
 
+
 			//Send two frames at a time
 			u32 single_send_size = buffer_size / audio_packets_per_single_send;
 			for (u32 i = 0; i < 10; i++) {
@@ -440,18 +441,21 @@ void HostImplementation(SOCKET host_socket)
 
 			//This happens only if the server allows a connection when the room is full
 			//something in the server code is not quite right
+			//The server assertion should be handled in an if statement in the 
+			// MESSAGE_REQUEST_ROOM_JOIN server case
 			XE_ASSERT(index != -1, "The server allowed a connection when there was no space, check that\n");
 
 			ConnectionInfo& connection = client_connections[index];
 			connection.pad_handle = vigem_target_x360_alloc();
-			connection.connected = true;
 			const auto controller_connection = vigem_target_add(client, connection.pad_handle);
 
 			if (!VIGEM_SUCCESS(controller_connection)) {
 				Log::Format("ViGEm Bus connection failed with error code: {:x}\n", static_cast<u32>(controller_connection));
+				vigem_target_free(connection.pad_handle);
 				SendMsg(host_socket, MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD);
 			}
 			else {
+				connection.connected = true;
 				SendMsg(host_socket, MESSAGE_INFO_PAD_ALLOCATED);
 				//Initialize also the thread
 				if (!video_capture_thread.joinable())
@@ -463,13 +467,15 @@ void HostImplementation(SOCKET host_socket)
 			full_capture_needed = true;
 		} break;
 		case MESSAGE_INFO_CLIENT_DISCONNECTED: {
-			u32 client_id;
-			Receive(host_socket, &client_id);
-			Log::Format("Client {} disconnected\n", client_id);
-			XE_ASSERT(client_connections[client_id].connected, "Client needs to be connected here\n");
-			client_connections[client_id].connected = false;
-			vigem_target_remove(client, client_connections[client_id].pad_handle);
-			vigem_target_free(client_connections[client_id].pad_handle);
+			//INFO: the server and the host SHOULD have their connections mapped
+			//in the same order and in the same slots as each other
+			u32 client_idx;
+			Receive(host_socket, &client_idx);
+			Log::Format("Client {} disconnected\n", client_idx);
+			XE_ASSERT(client_connections[client_idx].connected, "Client needs to be connected here\n");
+			client_connections[client_idx].connected = false;
+			vigem_target_remove(client, client_connections[client_idx].pad_handle);
+			vigem_target_free(client_connections[client_idx].pad_handle);
 		}break;
 		case MESSAGE_REQUEST_SEND_PAD_DATA: {
 			PadSignal signal;

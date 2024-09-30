@@ -282,6 +282,7 @@ namespace WX
 		void* components_buf = wx_fixed_buffer.GetWxSection(WX_ALLOCATIONS_COMPONENTS);
 		void* connection_frame_buf = wx_fixed_buffer.GetWxSection(WX_ALLOCATIONS_CONNECTION_FRAME);
 
+		//Emplace new are only initializing the obj they do not allocate new memory
 		comp = new (components_buf) Components;
 
 		comp->connection_frame = new (connection_frame_buf) ConnectionFrame(wx_fixed_buffer, *comp, "First wx window");
@@ -368,6 +369,8 @@ namespace WX
 			static_cast<RoomCreationFrame*>(room_creation_frame_buf)->Destroy();
 
 		static_cast<Components*>(components_buf)->~Components();
+
+		exit(0);
 	}
 
 	int EntryPoint()

@@ -258,13 +258,23 @@ void ExecuteClient(Core::FixedBuffer& fixed_buffer, SOCKET client_socket, Contro
 				std::scoped_lock lk{ payloads_mutex };
 				u32 buffer_length;
 				Receive(client_socket, &buffer_length);
-				XE_ASSERT(buffer_length == Audio::unit_packet_size_in_bytes * audio_packets_per_single_send, "Size needs to be fixed");
+				//XE_ASSERT(buffer_length == Audio::unit_packet_size_in_bytes * audio_packets_per_single_send, "Size needs to be fixed");
 
-				u32 single_send_size = buffer_length / audio_packets_per_single_send;
-				for (u32 i = 0; i < 10; i++) {
-					Audio::Payload payload;
-					ReceiveBuffer(client_socket, payload.data, single_send_size);
-					payloads.push_front(payload);
+				if (buffer_length == Audio::unit_packet_size_in_bytes * audio_packets_per_single_send) {
+					u32 single_send_size = buffer_length / audio_packets_per_single_send;
+					for (u32 i = 0; i < audio_packets_per_single_send; i++) {
+						Audio::Payload payload;
+						ReceiveBuffer(client_socket, payload.data, single_send_size);
+						payloads.push_front(payload);
+					}
+				}
+				else {
+					u32 single_send_size = buffer_length / audio_packets_per_fast_send;
+					for (u32 i = 0; i < audio_packets_per_fast_send; i++) {
+						Audio::Payload payload;
+						ReceiveBuffer(client_socket, payload.data, single_send_size);
+						payloads.push_front(payload);
+					}
 				}
 			}break;
 			case MESSAGE_REQUEST_ROOM_QUIT:
@@ -280,6 +290,7 @@ void ExecuteClient(Core::FixedBuffer& fixed_buffer, SOCKET client_socket, Contro
 
 	Audio::Device device;
 	Audio::InitDevice(&device, false);
+	u64 audio_slow_request_timestamp = 0;
 
 	while (true) {
 
@@ -390,7 +401,16 @@ void ExecuteClient(Core::FixedBuffer& fixed_buffer, SOCKET client_socket, Contro
 					payloads.pop_back();
 				}
 			}
+
+			u64 current_timestamp = GetTickCount64();
+			if (payloads.size() >= 60 && current_timestamp - audio_slow_request_timestamp > 5000) {
+				SendMsg(client_socket, MESSAGE_REQUEST_SEND_RESAMPLED_AUDIO);
+				Send(client_socket, room_id);
+				audio_slow_request_timestamp = current_timestamp;
+			}
 		}
+
+
 
 		if (std::memcmp(&prev_pad_state.Gamepad, &pad_state.Gamepad, sizeof(XINPUT_GAMEPAD)) != 0) {
 

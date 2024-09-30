@@ -51,6 +51,7 @@ static constexpr s32 send_buffer_height = 500;
 static constexpr u32 max_window_name_length = 128;
 static constexpr u32 max_window_enumerations = 128;
 static constexpr u32 audio_packets_per_single_send = 10;
+static constexpr u32 audio_packets_per_fast_send = 7;
 
 namespace WX {
 	extern const u32 components_struct_size;
@@ -71,6 +72,7 @@ enum Message
 	MESSAGE_REQUEST_SEND_COMPLETE_VIDEO_CAPTURE,
 	MESSAGE_REQUEST_SEND_PARTIAL_VIDEO_CAPTURE,
 	MESSAGE_REQUEST_SEND_AUDIO_CAPTURE,
+	MESSAGE_REQUEST_SEND_RESAMPLED_AUDIO,
 
 	MESSAGE_INFO_SERVER_PING,
 	MESSAGE_INFO_ROOM_JOINED,
@@ -186,6 +188,7 @@ struct Room
 	{
 		SOCKET sock;
 		bool connected;
+		u32 resampled_audio_frames_left;
 	} connected_sockets[4] = {};
 
 	//Edited by the host

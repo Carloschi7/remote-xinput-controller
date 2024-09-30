@@ -48,6 +48,8 @@ namespace WX
 		wxButton room_creation_create_button;
 	};
 
+	//Not a big fan of this OOP galore but i guess there is no other sane way of implementing this UI
+
 	class MainFrame : public wxFrame
 	{
 	public:

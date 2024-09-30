@@ -427,18 +427,61 @@ void HandleConnection(ServerData* server_data, SOCKET other_socket)
 
 			u32 buffer_length;
 			Receive(other_socket, &buffer_length);
+			XE_ASSERT(buffer_length == Audio::unit_packet_size_in_bytes * audio_packets_per_single_send,
+				"Error when reading data\n");
 
 			ReceiveBuffer(other_socket, audio_buf, buffer_length);
 			
 			for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
 				auto& connected_socket = rooms[room_index].connected_sockets[i];
 				if (connected_socket.connected) {
-					SendMsg(connected_socket.sock, MESSAGE_REQUEST_SEND_AUDIO_CAPTURE);
-					Send(connected_socket.sock, buffer_length);
-					SendBuffer(connected_socket.sock, audio_buf, buffer_length);
+
+					if(connected_socket.resampled_audio_frames_left == 0){
+						SendMsg(connected_socket.sock, MESSAGE_REQUEST_SEND_AUDIO_CAPTURE);
+						Send(connected_socket.sock, buffer_length);
+						SendBuffer(connected_socket.sock, audio_buf, buffer_length);
+					}
+					else {
+						u32 starting_point = Audio::unit_packet_size_in_bytes * (audio_packets_per_single_send - audio_packets_per_fast_send);
+						u32 short_buf_length = Audio::unit_packet_size_in_bytes * audio_packets_per_fast_send;
+
+						SendMsg(connected_socket.sock, MESSAGE_REQUEST_SEND_AUDIO_CAPTURE);
+						Send(connected_socket.sock, short_buf_length);
+						SendBuffer(connected_socket.sock, audio_buf + starting_point, short_buf_length);
+
+						connected_socket.resampled_audio_frames_left--;
+					}
+
+
 				}
 			}
 
+
+		}break;
+		case MESSAGE_REQUEST_SEND_RESAMPLED_AUDIO: {
+			if (is_this_client_hosting)
+				break;
+
+			u32 room_index = 0;
+			u64 room_id;
+			Receive(other_socket, &room_id);
+
+			bool found_room = false, found_match = false;
+			for (u32 i = 0; i < rooms.size(); i++) {
+				if (rooms[i].id == room_id) {
+					room_index = i;
+					found_room = true;
+					break;
+				}
+			}
+
+			for (u32 i = 0; i < XUSER_MAX_COUNT; i++) {
+				auto& connected_socket = rooms[room_index].connected_sockets[i];
+				if (connected_socket.sock == other_socket) {
+					connected_socket.resampled_audio_frames_left = 10;
+					break;
+				}
+			}
 
 		}break;
 		case MESSAGE_ERROR_HOST_COULD_NOT_ALLOCATE_PAD:
