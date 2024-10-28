@@ -428,6 +428,7 @@ void ExecuteHost(Core::FixedBuffer& fixed_buffer, SOCKET host_socket, char* sele
     }
 	std::thread video_capture_thread;
 
+    u16 peer_count = 0;
 	while (run_loops) {
 
 		Message msg = ReceiveMsg(host_socket);
@@ -443,11 +444,14 @@ void ExecuteHost(Core::FixedBuffer& fixed_buffer, SOCKET host_socket, char* sele
 			} else {
 			    XE_ASSERT(extra_wx_data, "Needs to be defined");
                 using AtomicBool = std::atomic<bool>;
+                using AtomicU16 = std::atomic<u16>;
                 auto exec_thread_flag = static_cast<AtomicBool*>(extra_wx_data);
                 if (exec_thread_flag->load()) {
 				    SendMsg(host_socket, MESSAGE_INFO_ROOM_CLOSING);
 				    run_loops = false;
                 }
+                auto host_current_connections = reinterpret_cast<AtomicU16*>(((u8*)extra_wx_data) + sizeof(AtomicU16));
+                host_current_connections->store(peer_count);
 			}
 		}break;
 		case MESSAGE_INFO_CLIENT_JOINING_ROOM: {
@@ -484,6 +488,7 @@ void ExecuteHost(Core::FixedBuffer& fixed_buffer, SOCKET host_socket, char* sele
 			}
 
 			Log::Format("Connection found!!\n");
+			peer_count++;
 			full_capture_needed = true;
 		} break;
 		case MESSAGE_INFO_CLIENT_DISCONNECTED: {
@@ -492,6 +497,7 @@ void ExecuteHost(Core::FixedBuffer& fixed_buffer, SOCKET host_socket, char* sele
 			u32 client_idx;
 			Receive(host_socket, &client_idx);
 			Log::Format("Client {} disconnected\n", client_idx);
+			peer_count--;
 			XE_ASSERT(client_connections[client_idx].connected, "Client needs to be connected here\n");
 			client_connections[client_idx].connected = false;
 			vigem_target_remove(client, client_connections[client_idx].pad_handle);

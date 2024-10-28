@@ -19,6 +19,7 @@ namespace WX
 			std::thread exec_thread;
 			//Signals the thread to stop running
 			std::atomic<bool> exec_thread_flag;
+			std::atomic<u16> host_current_connections;
 			Core::FixedBuffer fixed_buffer;
 			u32 xbox_controllers_count;
 			u32 dualshock_controllers_count;
@@ -40,6 +41,7 @@ namespace WX
 		wxListItem main_frame_rooms_list_item;
 		wxButton main_frame_create_button;
 		wxButton main_frame_join_button;
+		wxButton main_frame_quit_button;
 		wxButton main_frame_query_button;
 
 		RoomCreationFrame* room_creation_frame = nullptr;
@@ -49,7 +51,15 @@ namespace WX
 		wxListCtrl room_creation_processes_list_box;
 		wxButton room_creation_create_button;
 		wxButton room_creation_close_button;
+		wxStaticText room_creation_connected_peers_text;
+		wxTimer* room_creation_timer;
 	};
+
+    //Because of some raw pointer addressing happening in the ExecuteHost function, these vars need to
+    //be close to each other
+    //TODO(C7) a cleaner solution for the future could be more functional
+    static_assert(offsetof(Components, exec_thread_flag) + sizeof(std::atomic<u16>) ==
+        offsetof(Components, host_current_connections));
 
 	//Not a big fan of this OOP galore but i guess there is no other sane way of implementing this UI
 
@@ -61,6 +71,7 @@ namespace WX
 		void QueryButtonCallback(wxCommandEvent& event);
 		void CreateButtonCallback(wxCommandEvent& event);
 		void JoinButtonCallback(wxCommandEvent& event);
+		void QuitButtonCallback(wxCommandEvent& event);
 		void CloseWindowCallback(wxCloseEvent&);
 
 		Components& comp;

@@ -1,8 +1,8 @@
 #pragma once
 #define WIN32_LEAN_AND_MEAN
-//#define IMPLEMENTATION_SERVER
+#define IMPLEMENTATION_SERVER
 //#define IMPLEMENTATION_CONSOLE // Unsafe to use, for debug purposes
-#define IMPLEMENTATION_WX
+//#define IMPLEMENTATION_WX
 //Provide compatibility with wxWidgets
 #ifndef _CRT_SECURE_NO_WARNINGS
 #	define _CRT_SECURE_NO_WARNINGS

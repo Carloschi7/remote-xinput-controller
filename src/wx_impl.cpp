@@ -49,9 +49,13 @@ namespace WX
 		//wxButton& create_button = comp.main_frame_create_button;
 		comp.main_frame_create_button.Create(&comp.main_frame_panel, wxID_ANY, "Create Room", wxPoint(150, 500), wxSize(100, 30));
 		comp.main_frame_join_button.Create(&comp.main_frame_panel, wxID_ANY, "Join Room", wxPoint(300, 500), wxSize(100, 30));
+		comp.main_frame_quit_button.Create(&comp.main_frame_panel, wxID_ANY, "Quit Room", wxPoint(300, 600), wxSize(100, 30));
 		comp.main_frame_query_button.Create(&comp.main_frame_panel, wxID_ANY, "Query All", wxPoint(450, 500), wxSize(100, 30));
 
+        comp.main_frame_quit_button.Disable();
+
 		Bind(wxEVT_BUTTON, &MainFrame::JoinButtonCallback, this, comp.main_frame_join_button.GetId());
+		Bind(wxEVT_BUTTON, &MainFrame::QuitButtonCallback, this, comp.main_frame_quit_button.GetId());
 		Bind(wxEVT_BUTTON, &MainFrame::QueryButtonCallback, this, comp.main_frame_query_button.GetId());
 		Bind(wxEVT_BUTTON, &MainFrame::CreateButtonCallback, this, comp.main_frame_create_button.GetId());
 		Bind(wxEVT_CLOSE_WINDOW, &MainFrame::CloseWindowCallback, this);
@@ -143,6 +147,8 @@ namespace WX
             //TODO implement ui elements that toggle the exec_thread_flag
 			comp.exec_thread = SPAWN_THREAD(ExecuteClient(comp.fixed_buffer, comp.local_socket,
 				controller_type, controller_id, false, &comp.exec_thread_flag));
+			comp.main_frame_quit_button.Enable();
+			comp.main_frame_join_button.Disable();
 		}break;
 		case MESSAGE_ERROR_INDEX_OUT_OF_BOUNDS:
 			wxMessageBox("Internal error, please refresh and try again", "Error", wxOK | wxICON_ERROR);
@@ -155,6 +161,16 @@ namespace WX
 			break;
 		}
 	}
+
+    void MainFrame::QuitButtonCallback(wxCommandEvent&)
+    {
+        comp.exec_thread_flag = true;
+        comp.exec_thread.join();
+        comp.exec_thread_flag = false;
+
+        comp.main_frame_quit_button.Disable();
+        comp.main_frame_join_button.Enable();
+    }
 
 	void MainFrame::CloseWindowCallback(wxCloseEvent&)
 	{
@@ -187,6 +203,9 @@ namespace WX
         comp.room_creation_close_button.Create(&comp.room_creation_panel, wxID_ANY, "Close Room",
             wxPoint(300, 450), wxSize(100, 30));
         comp.room_creation_close_button.Disable();
+
+        comp.room_creation_connected_peers_text.Create(&comp.room_creation_panel, wxID_ANY,
+			"connected peers: 0", wxPoint(500, 450), wxSize(100, 30));
 
 		if (comp.fixed_buffer.Initialized()) {
 			comp.fixed_buffer.ResetState();
@@ -256,6 +275,13 @@ namespace WX
         comp.room_creation_create_button.Disable();
         comp.room_creation_close_button.Enable();
 
+        comp.room_creation_timer = new wxTimer(this, wxID_ANY);
+        Bind(wxEVT_TIMER, [&](wxTimerEvent&) {
+            std::string text = "connected peers: " + std::to_string(comp.host_current_connections);
+            comp.room_creation_connected_peers_text.SetLabel(text.c_str());
+        }, comp.room_creation_timer->GetId());
+        comp.room_creation_timer->Start(500);
+
         comp.exec_thread = SPAWN_THREAD(ExecuteHost(comp.fixed_buffer, comp.local_socket, comp.selected_window_name, info,
             comp.vigem_client, false, &comp.exec_thread_flag));
 	}
@@ -265,6 +291,7 @@ namespace WX
         comp.exec_thread_flag = true;
         comp.exec_thread.join();
         comp.exec_thread_flag = false;
+        delete comp.room_creation_timer;
 
         comp.room_creation_close_button.Disable();
         comp.room_creation_create_button.Enable();
