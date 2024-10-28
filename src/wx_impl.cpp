@@ -139,6 +139,8 @@ namespace WX
 		case MESSAGE_ERROR_NONE: {
 			comp.fixed_buffer.Init(FIXED_BUFFER_TYPE_CLIENT);
 
+
+            //TODO implement ui elements that toggle the exec_thread_flag
 			comp.exec_thread = SPAWN_THREAD(ExecuteClient(comp.fixed_buffer, comp.local_socket,
 				controller_type, controller_id, false, &comp.exec_thread_flag));
 		}break;
@@ -182,6 +184,10 @@ namespace WX
 		comp.room_creation_create_button.Create(&comp.room_creation_panel, wxID_ANY, "Create Room",
 			wxPoint(100, 450), wxSize(100, 30));
 
+        comp.room_creation_close_button.Create(&comp.room_creation_panel, wxID_ANY, "Close Room",
+            wxPoint(300, 450), wxSize(100, 30));
+        comp.room_creation_close_button.Disable();
+
 		if (comp.fixed_buffer.Initialized()) {
 			comp.fixed_buffer.ResetState();
 		}
@@ -191,6 +197,7 @@ namespace WX
 		Bind(wxEVT_SHOW, &RoomCreationFrame::ShowWindowCallback, this);
 		Bind(wxEVT_CLOSE_WINDOW, &RoomCreationFrame::CloseWindowCallback, this);
 		Bind(wxEVT_BUTTON, &RoomCreationFrame::CreateRoomCallback, this, comp.room_creation_create_button.GetId());
+		Bind(wxEVT_BUTTON, &RoomCreationFrame::CloseRoomCallback, this, comp.room_creation_close_button.GetId());
 
 		this->Show();
 	}
@@ -219,14 +226,49 @@ namespace WX
 
 	void RoomCreationFrame::CloseWindowCallback(wxCloseEvent&)
 	{
+	    //Closing the room creation window is allowed only if no room is being hosted
+	    if(comp.exec_thread.get_id() != std::thread::id{}) return;
+
 		comp.main_frame_create_button.Enable();
 		this->Hide();
 	}
 
 	void RoomCreationFrame::CreateRoomCallback(wxCommandEvent&)
 	{
+        Room::Info info = {};
+		info.current_pads = 0;
+		wxString literal_value = comp.room_creation_max_controllers_combo_box.GetValue();
+		XE_ASSERT(literal_value.size() == 1 && literal_value[0] >= '1' && literal_value[0] <= '4', "Value out of bounds");
+		info.max_pads = literal_value[0] - '0';
+        s32 item = 0;
+        item = comp.room_creation_processes_list_box.GetNextItem(item, wxLIST_NEXT_ALL, wxLIST_STATE_SELECTED);
 
+        wxString room_name = comp.room_creation_room_name_input_box.GetValue();
+        std::memcpy(info.name, room_name.c_str(), room_name.size() + 1);
+
+        wxString process_name_string = comp.room_creation_processes_list_box.GetItemText(item, 1);
+        std::memcpy(comp.selected_window_name, process_name_string.c_str(), process_name_string.size() + 1);
+
+        SendMsg(comp.local_socket, MESSAGE_REQUEST_ROOM_CREATE);
+        Send(comp.local_socket, info);
+
+
+        comp.room_creation_create_button.Disable();
+        comp.room_creation_close_button.Enable();
+
+        comp.exec_thread = SPAWN_THREAD(ExecuteHost(comp.fixed_buffer, comp.local_socket, comp.selected_window_name, info,
+            comp.vigem_client, false, &comp.exec_thread_flag));
 	}
+
+    void RoomCreationFrame::CloseRoomCallback(wxCommandEvent&)
+    {
+        comp.exec_thread_flag = true;
+        comp.exec_thread.join();
+        comp.exec_thread_flag = false;
+
+        comp.room_creation_close_button.Disable();
+        comp.room_creation_create_button.Enable();
+    }
 
 	ConnectionFrame::ConnectionFrame(Core::FixedBuffer& wx_fixed_buffer, Components& components, const wxString& title)
 		: wxFrame(nullptr, wxID_ANY, title), comp(components), wx_fixed_buffer(wx_fixed_buffer)
@@ -234,7 +276,7 @@ namespace WX
 		comp.connection_frame_panel.Create(this);
 		this->SetSize(wxSize(450, 250));
 
-		comp.connection_frame_text.Create(&comp.connection_frame_panel, wxID_ANY, 
+		comp.connection_frame_text.Create(&comp.connection_frame_panel, wxID_ANY,
 			"Welcome to xinput-emu, insert the server IP to get started\n", wxPoint(100, 35), wxSize(100, 30));
 
 		comp.connection_frame_text.Wrap(280);
@@ -246,7 +288,7 @@ namespace WX
 		Bind(wxEVT_CLOSE_WINDOW, &ConnectionFrame::DestroyInstance, this);
 	}
 
-	void ConnectionFrame::ConnectButtonCallback(wxCommandEvent&) 
+	void ConnectionFrame::ConnectButtonCallback(wxCommandEvent&)
 	{
 		comp.connection_frame_text.SetLabel("Connecting");
 

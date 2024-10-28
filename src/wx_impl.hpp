@@ -17,11 +17,13 @@ namespace WX
 		struct {
 			SOCKET local_socket;
 			std::thread exec_thread;
+			//Signals the thread to stop running
 			std::atomic<bool> exec_thread_flag;
 			Core::FixedBuffer fixed_buffer;
 			u32 xbox_controllers_count;
 			u32 dualshock_controllers_count;
 			PVIGEM_CLIENT vigem_client;
+			char selected_window_name[max_window_name_length];
 		};
 
 		ConnectionFrame* connection_frame = nullptr;
@@ -46,6 +48,7 @@ namespace WX
 		wxTextCtrl room_creation_room_name_input_box;
 		wxListCtrl room_creation_processes_list_box;
 		wxButton room_creation_create_button;
+		wxButton room_creation_close_button;
 	};
 
 	//Not a big fan of this OOP galore but i guess there is no other sane way of implementing this UI
@@ -72,6 +75,7 @@ namespace WX
 		void CloseWindowCallback(wxCloseEvent&);
 
 		void CreateRoomCallback(wxCommandEvent&);
+		void CloseRoomCallback(wxCommandEvent&);
 
 		Components& comp;
 		Core::FixedBuffer& wx_fixed_buffer;

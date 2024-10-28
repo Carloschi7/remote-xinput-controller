@@ -140,8 +140,8 @@ struct WindowEnumeration
 	u32 windows_count;
 };
 
-const u32 g_client_allocations_offsets[CLIENT_ALLOCATIONS_SIZE] = { 
-	(send_buffer_width * send_buffer_height * 4) / 10 
+const u32 g_client_allocations_offsets[CLIENT_ALLOCATIONS_SIZE] = {
+	(send_buffer_width * send_buffer_height * 4) / 10
 };
 
 const u32 g_host_allocations_offsets[HOST_ALLOCATIONS_SIZE] = {
@@ -197,7 +197,7 @@ struct Room
 		char name[16];
 		u16 max_pads;
 		u16 current_pads;
-		//Unused		
+		//Unused
 		u32 host_window_width;
 		u32 host_window_height;
 	} info;

@@ -32,3 +32,6 @@ SOCKET ConnectToServer(const char* address, USHORT port);
 bool ValidateIpAddress(const char* address);
 void VigemDeallocate(PVIGEM_CLIENT client, ConnectionInfo* client_connections, u32 count);
 void HostImplementation(SOCKET host_socket);
+//Room::Info is copied to make sure data lifetime is kept intact during wx runtime
+void ExecuteHost(Core::FixedBuffer& fixed_buffer, SOCKET host_socket, char* selected_window_name, Room::Info room_info,
+    PVIGEM_CLIENT client, bool console_impl, void* extra_wx_data);

@@ -56,7 +56,7 @@ void TestDualshock()
 	}
 }
 
-static BOOL EnumerateWindowsCallback(HWND hwnd, LPARAM lparam) 
+static BOOL EnumerateWindowsCallback(HWND hwnd, LPARAM lparam)
 {
 	char class_name[max_window_name_length] = {};
 	auto enumerations = std::bit_cast<WindowEnumeration*>(lparam);
@@ -71,7 +71,7 @@ static BOOL EnumerateWindowsCallback(HWND hwnd, LPARAM lparam)
 		return TRUE;
 
 	GetWindowTextA(hwnd, class_name, sizeof(class_name));
-	
+
 	if (class_name[0] == 0 ||
 		std::memcmp(class_name, "Default", sizeof("Default") - 1) == 0 ||
 		std::memcmp(class_name, "MSCTFIME", sizeof("MSCTFIME") - 1) == 0) {
@@ -125,7 +125,7 @@ void SendCapturedData(SOCKET server_socket, const char* process_name, Core::Fixe
 	prev_compressed_buf.buf = static_cast<u8*>(fixed_buffer.GetHostSection(HOST_ALLOCATIONS_PREV_COMPRESSED_BUF));
 	u8* uncompressed_buf = static_cast<u8*>(fixed_buffer.GetHostSection(HOST_ALLOCATIONS_UNCOMPRESSED_BUF));
 
-	auto compression_func = [](void* context, void* data, int size) 
+	auto compression_func = [](void* context, void* data, int size)
 	{
 		CompressionBuffer* raw_buf = (CompressionBuffer*)context;
 		XE_ASSERT(raw_buf->cursor + size < raw_buf->buf_size, "Compressed buffer size too small\n");
@@ -153,7 +153,7 @@ void SendCapturedData(SOCKET server_socket, const char* process_name, Core::Fixe
 
 		compressed_buf.cursor = 0;
 		stbi_write_jpg_to_func(compression_func, &compressed_buf, send_buffer_width, send_buffer_height, 4, uncompressed_buf, 50);
-		
+
 		if (full_capture_needed) {
 			SendMsg(server_socket, MESSAGE_REQUEST_SEND_COMPLETE_VIDEO_CAPTURE);
 			Send(server_socket, compressed_buf.cursor);
@@ -401,21 +401,31 @@ void HostImplementation(SOCKET host_socket)
 		std::memcpy(selected_window_name, &enumeration->window_names[window_choice * max_window_name_length], max_window_name_length);
 	}
 
+    SendMsg(host_socket, MESSAGE_REQUEST_ROOM_CREATE);
+	Send(host_socket, room_info);
+
+    ExecuteHost(fixed_buffer, host_socket, selected_window_name, room_info, client, true, nullptr);
+}
+
+void ExecuteHost(Core::FixedBuffer& fixed_buffer, SOCKET host_socket, char* selected_window_name, Room::Info room_info,
+    PVIGEM_CLIENT client, bool console_impl, void* extra_wx_data)
+{
 	auto client_connections = static_cast<ConnectionInfo*>(fixed_buffer.GetHostSection(HOST_ALLOCATIONS_CLIENT_CONNECTIONS));
 	//ZeroMemory(client_connections, g_host_allocations_offsets[HOST_ALLOCATIONS_CLIENT_CONNECTIONS]);
-	SendMsg(host_socket, MESSAGE_REQUEST_ROOM_CREATE);
-	Send(host_socket, room_info);
+
 
 	std::atomic<char> quit_signal;
 	std::atomic<bool> run_loops = true;
 
-	std::thread host_input_thd([&quit_signal]() {
-		while (true) {
-			char ch; std::cin >> ch;
-			if (ch == 'X') { quit_signal = ch; break; }
-		} });
-	Log::Format("Room created (X to close it)\n");
-
+	std::thread host_input_thd;
+    if(console_impl){
+    	host_input_thd = std::thread([&quit_signal]() {
+    		while (true) {
+    			char ch; std::cin >> ch;
+    			if (ch == 'X') { quit_signal = ch; break; }
+    		} });
+    	Log::Format("Room created (X to close it)\n");
+    }
 	std::thread video_capture_thread;
 
 	while (run_loops) {
@@ -424,10 +434,20 @@ void HostImplementation(SOCKET host_socket)
 		switch (msg) {
 		case MESSAGE_INFO_SERVER_PING: {
 			//Closing the room
-			if (quit_signal.load() == 'X') {
-				Log::Format("Closing room...\n");
-				SendMsg(host_socket, MESSAGE_INFO_ROOM_CLOSING);
-				run_loops = false;
+			if(console_impl){
+    			if (quit_signal.load() == 'X') {
+    				Log::Format("Closing room...\n");
+    				SendMsg(host_socket, MESSAGE_INFO_ROOM_CLOSING);
+    				run_loops = false;
+    			}
+			} else {
+			    XE_ASSERT(extra_wx_data, "Needs to be defined");
+                using AtomicBool = std::atomic<bool>;
+                auto exec_thread_flag = static_cast<AtomicBool*>(extra_wx_data);
+                if (exec_thread_flag->load()) {
+				    SendMsg(host_socket, MESSAGE_INFO_ROOM_CLOSING);
+				    run_loops = false;
+                }
 			}
 		}break;
 		case MESSAGE_INFO_CLIENT_JOINING_ROOM: {
@@ -441,7 +461,7 @@ void HostImplementation(SOCKET host_socket)
 
 			//This happens only if the server allows a connection when the room is full
 			//something in the server code is not quite right
-			//The server assertion should be handled in an if statement in the 
+			//The server assertion should be handled in an if statement in the
 			// MESSAGE_REQUEST_ROOM_JOIN server case
 			XE_ASSERT(index != -1, "The server allowed a connection when there was no space, check that\n");
 
@@ -488,8 +508,11 @@ void HostImplementation(SOCKET host_socket)
 		}
 	}
 
-	host_input_thd.join();
+	if(console_impl)
+	   host_input_thd.join();
+
 	if(video_capture_thread.joinable())
 		video_capture_thread.join();
-	VigemDeallocate(client, client_connections, virtual_pads);
+
+	VigemDeallocate(client, client_connections, room_info.max_pads);
 }

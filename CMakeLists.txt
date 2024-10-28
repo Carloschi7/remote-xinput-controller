@@ -9,6 +9,7 @@ add_executable(${PROJECT_NAME}
 	src/server.hpp src/server.cpp
 	src/mem.hpp src/mem.cpp
 	src/types.hpp src/incl.hpp
+	src/wx_impl.hpp src/wx_impl.cpp
 	src/main.cpp)
 
 target_include_directories(${PROJECT_NAME} PUBLIC
